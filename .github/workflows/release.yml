@@ -1,0 +1,44 @@
+# Builds the Windows app when a version tag (v1.2.3) is pushed and publishes it as a GitHub release.
+# The file names stay the same in every version: the site links to releases/latest/download/<name>.
+name: Versión para Windows
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compilar el sitio
+        run: npm run build
+
+      - name: Descargar yt-dlp y FFmpeg
+        run: npm run desktop:binaries
+
+      - name: Compilar instalador y portable
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: Publicar la versión
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            release/TodoEnUno-Instalador.exe \
+            release/TodoEnUno-Portable.exe \
+            release/TodoEnUno-*-win.zip \
+            --title "TodoEnUno ${GITHUB_REF_NAME#v}" \
+            --notes "Descarga **TodoEnUno-Instalador.exe** para instalar la app, o **TodoEnUno-Portable.exe** para usarla sin instalar."
