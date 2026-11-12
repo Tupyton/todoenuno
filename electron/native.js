@@ -3,7 +3,7 @@
 // The page only names a job and its settings; the command line is always built here.
 import { spawn } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -52,11 +52,26 @@ function ffmpegJob(params, input) {
   return 'Trabajo desconocido.';
 }
 
-function run(command, args, cwd, res) {
+/** Seconds in an FFmpeg time such as 01:02:03.45. */
+const seconds = (text) => text.split(':').reduce((total, part) => total * 60 + Number(part), 0);
+
+/**
+ * Runs a program inside `cwd`. Closing the request `res` belongs to cancels it. `onProgress` gets
+ * values from 0 to 1 read from FFmpeg's own status lines.
+ */
+function run(command, args, cwd, res, onProgress) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
     let stderr = '';
-    child.stderr.on('data', (chunk) => (stderr = (stderr + chunk).slice(-4000)));
+    let duration = 0;
+    child.stderr.on('data', (chunk) => {
+      const text = String(chunk);
+      stderr = (stderr + text).slice(-4000);
+      if (!onProgress) return;
+      duration ||= seconds(/Duration: (\d+:\d+:[\d.]+)/.exec(stderr)?.[1] || '0');
+      const at = [...text.matchAll(/time=(\d+:\d+:[\d.]+)/g)].at(-1);
+      if (at && duration) onProgress(Math.min(1, seconds(at[1]) / duration));
+    });
     // Closing the tool page cancels the work.
     const cancel = () => child.kill();
     res.once('close', cancel);
@@ -81,29 +96,173 @@ const fail = (res, status, message) => {
   else res.destroy();
 };
 
-/** POST /api/ffmpeg?job=…: the request body is the input file, the response is the result. */
-export function createFFmpegHandler(ffmpeg) {
-  return async (req, res, url) => {
-    const extension = url.searchParams.get('ext');
-    if (!/^[a-z0-9]{1,5}$/i.test(extension || '')) return fail(res, 400, 'Archivo no válido.');
-    const input = `input.${extension}`;
-    const job = ffmpegJob(url.searchParams, input);
-    if (typeof job === 'string') return fail(res, 400, job);
-    const dir = await mkdtemp(join(tmpdir(), 'todoenuno-'));
-    try {
-      await pipeline(req, createWriteStream(join(dir, input)));
-      const output = `output.${job.outExt}`;
-      for (const [i, pass] of job.passes.entries()) {
-        const last = i === job.passes.length - 1;
-        await run(ffmpeg, ['-hide_banner', '-y', ...pass, ...(last ? [output] : [])], dir, res);
-      }
-      await sendFile(res, join(dir, output), 'application/octet-stream');
-    } catch (error) {
-      fail(res, 500, error.message);
-    } finally {
-      await rm(dir, { recursive: true, force: true }).catch(() => {});
+/** Named jobs: POST /api/ffmpeg?job=…, the request body is the input file and the response the result. */
+async function namedJob(ffmpeg, req, res, url) {
+  const extension = url.searchParams.get('ext');
+  if (!/^[a-z0-9]{1,5}$/i.test(extension || '')) return fail(res, 400, 'Archivo no válido.');
+  const input = `input.${extension}`;
+  const job = ffmpegJob(url.searchParams, input);
+  if (typeof job === 'string') return fail(res, 400, job);
+  const dir = await mkdtemp(join(tmpdir(), 'todoenuno-'));
+  try {
+    await pipeline(req, createWriteStream(join(dir, input)));
+    const output = `output.${job.outExt}`;
+    for (const [i, pass] of job.passes.entries()) {
+      const last = i === job.passes.length - 1;
+      await run(ffmpeg, ['-hide_banner', '-y', ...pass, ...(last ? [output] : [])], dir, res);
     }
-  };
+    await sendFile(res, join(dir, output), 'application/octet-stream');
+  } catch (error) {
+    fail(res, 500, error.message);
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/*
+ * Any FFmpeg command of the tool pages, the same one the WebAssembly build would run: the page uploads
+ * its input files, then asks for the command and gets the output back. Each command runs in a folder of
+ * its own, and no argument may name a path or a URL, so FFmpeg only ever sees that folder's files.
+ */
+const NAME = /^[\w-][\w.-]{0,63}$/;
+const ID = /^[\w-]{8,64}$/;
+const UNSAFE = [
+  /(^|[='":,])([\\/]|[a-z]:[\\/])/i, // absolute paths, also inside a filter's options
+  /(^|[\\/])\.\.([\\/]|$)/, // parent folders
+  /^[a-z][\w+.-]*:/i, // protocols: http:, concat:, subfile:…
+];
+const IDLE = 10 * 60_000;
+const jobs = new Map();
+
+function jobFor(id, create) {
+  let job = jobs.get(id);
+  if (!job && create) {
+    job = { dir: mkdtemp(join(tmpdir(), 'todoenuno-')), progress: 0 };
+    jobs.set(id, job);
+  }
+  if (!job) return null;
+  // A page closed mid-upload leaves no request behind, so unused jobs clean themselves up.
+  clearTimeout(job.timer);
+  job.timer = setTimeout(() => dropJob(id), IDLE);
+  return job;
+}
+
+async function dropJob(id) {
+  const job = jobs.get(id);
+  if (!job) return;
+  jobs.delete(id);
+  clearTimeout(job.timer);
+  await rm(await job.dir, { recursive: true, force: true }).catch(() => {});
+}
+
+/*
+ * Graphics card encoders, tried once in this order. Each replaces the x264 settings the pages use:
+ * the quality number (CRF) becomes the encoder's own constant-quality setting.
+ */
+const GPU = [
+  ['h264_nvenc', (q) => ['-c:v', 'h264_nvenc', '-preset', 'p4', '-rc', 'vbr', '-cq', q, '-b:v', '0']],
+  ['h264_qsv', (q) => ['-c:v', 'h264_qsv', '-preset', 'veryfast', '-global_quality', q], 'nv12'],
+  ['h264_amf', (q) => ['-c:v', 'h264_amf', '-quality', 'balanced', '-rc', 'cqp', '-qp_i', q, '-qp_p', q]],
+];
+let gpu;
+
+/** The first encoder that can encode a frame on this computer, or null. */
+function findGpu(ffmpeg) {
+  gpu ??= (async () => {
+    for (const encoder of GPU) {
+      const ok = await new Promise((resolve) => {
+        const args = ['-hide_banner', '-f', 'lavfi', '-i', 'color=size=256x256:duration=0.1', '-frames:v', '1', '-c:v', encoder[0], '-f', 'null', '-'];
+        spawn(ffmpeg, args, { stdio: 'ignore', windowsHide: true })
+          .on('error', () => resolve(false))
+          .on('close', (code) => resolve(code === 0));
+      });
+      if (ok) return encoder;
+    }
+    return null;
+  })();
+  return gpu;
+}
+
+/** The same command with x264 swapped for the graphics card encoder, or null when it has no x264 video. */
+function withGpu(args, [, settings, pixelFormat]) {
+  const at = args.findIndex((arg, i) => arg === 'libx264' && args[i - 1] === '-c:v');
+  if (at < 0) return null;
+  const crf = args[args.indexOf('-crf') + 1] || '23';
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    if (i === at - 1) {
+      out.push(...settings(crf));
+      i++;
+    } else if (args[i] === '-preset' || args[i] === '-crf') i++;
+    else if (pixelFormat && args[i] === '-pix_fmt' && args[i + 1] === 'yuv420p') {
+      out.push('-pix_fmt', pixelFormat);
+      i++;
+    } else out.push(args[i]);
+  }
+  return out;
+}
+
+async function readBody(req, limit) {
+  let body = '';
+  for await (const chunk of req) {
+    body += chunk;
+    if (body.length > limit) throw new Error('Petición demasiado grande.');
+  }
+  return body;
+}
+
+async function commandJob(ffmpeg, req, res, url) {
+  const id = url.searchParams.get('id');
+  if (!ID.test(id || '')) return fail(res, 400, 'Trabajo no válido.');
+  const step = url.pathname.slice('/api/ffmpeg/'.length);
+  try {
+    if (step === 'input') {
+      const name = url.searchParams.get('name');
+      if (!NAME.test(name || '')) return fail(res, 400, 'Nombre de archivo no válido.');
+      const job = jobFor(id, true);
+      await pipeline(req, createWriteStream(join(await job.dir, name)));
+      return res.writeHead(204).end();
+    }
+    if (step === 'progress') {
+      const job = jobFor(id, false);
+      return res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ progress: job?.progress || 0 }));
+    }
+    if (step !== 'run') return fail(res, 404, 'No encontrado.');
+    const job = jobFor(id, false);
+    if (!job) return fail(res, 400, 'Faltan los archivos.');
+    const refuse = async (message) => {
+      await dropJob(id);
+      fail(res, 400, message);
+    };
+    const { args, output } = JSON.parse(await readBody(req, 100_000));
+    if (!Array.isArray(args) || !args.every((a) => typeof a === 'string') || !NAME.test(output || '')) return refuse('Orden no válida.');
+    if (args.some((arg) => UNSAFE.some((pattern) => pattern.test(arg)))) return refuse('Orden no válida.');
+    const dir = await job.dir;
+    const inputs = new Set(await readdir(dir));
+    if (args.some((arg, i) => args[i - 1] === '-i' && !inputs.has(arg))) return refuse('Falta un archivo de entrada.');
+    const onProgress = (p) => (job.progress = p);
+    const encoder = await findGpu(ffmpeg);
+    const fast = encoder && withGpu(args, encoder);
+    const full = (a) => ['-hide_banner', '-y', ...a, output];
+    try {
+      await run(ffmpeg, full(fast || args), dir, res, onProgress);
+    } catch (error) {
+      // Some videos or drivers do not get along with the graphics card; the regular encoder always works.
+      if (!fast || res.destroyed) throw error;
+      job.progress = 0;
+      await run(ffmpeg, full(args), dir, res, onProgress);
+    }
+    await sendFile(res, join(dir, output), 'application/octet-stream');
+    await dropJob(id);
+  } catch (error) {
+    await dropJob(id);
+    fail(res, 500, error.message);
+  }
+}
+
+/** POST /api/ffmpeg?job=… for named jobs, /api/ffmpeg/{input,run,progress}?id=… for page commands. */
+export function createFFmpegHandler(ffmpeg) {
+  return (req, res, url) => (url.pathname === '/api/ffmpeg' ? namedJob(ffmpeg, req, res, url) : commandJob(ffmpeg, req, res, url));
 }
 
 /* Text to speech with System.Speech, which every Windows has. */

@@ -1,3 +1,4 @@
+import { DESKTOP } from '../env.js';
 import { base, ext } from '../ui.js';
 
 // Served by the site itself; scripts/ffmpeg-core.mjs puts the files in public/ffmpeg.
@@ -38,6 +39,7 @@ function getFFmpeg() {
  * to FFmpeg's file system. Returns the output as `{ blob, name }`.
  */
 export async function execFFmpeg({ inputs, args, outExt, name, progress }) {
+  if (DESKTOP) return execNative({ inputs, args, outExt, name, progress });
   const ffmpeg = await getFFmpeg();
   const output = `output.${outExt}`;
   const logs = [];
@@ -57,6 +59,37 @@ export async function execFFmpeg({ inputs, args, outExt, name, progress }) {
     ffmpeg.off('log', onLog);
     ffmpeg.off('progress', onProgress);
     for (const path of [...inputs.map((i) => i.name), output]) await ffmpeg.deleteFile(path).catch(() => {});
+  }
+}
+
+/**
+ * Desktop app: the same command, run by the app with the FFmpeg installed next to it, which is many
+ * times faster, can use the graphics card and has no file size limit (see electron/native.js).
+ */
+async function execNative({ inputs, args, outExt, name, progress }) {
+  const id = crypto.randomUUID();
+  const api = (step, params = {}) => `/api/ffmpeg/${step}?${new URLSearchParams({ id, ...params })}`;
+  const failed = async (response, message) => new Error((await response.text()) || message);
+  for (const { name: file, data } of inputs) {
+    const response = await fetch(api('input', { name: file }), { method: 'POST', body: data });
+    if (!response.ok) throw await failed(response, 'No se pudo preparar el archivo.');
+  }
+  const timer = setInterval(() => {
+    fetch(api('progress'), { method: 'POST' })
+      .then((response) => response.ok && response.json())
+      .then((answer) => answer && progress?.(answer.progress))
+      .catch(() => {});
+  }, 500);
+  try {
+    const response = await fetch(api('run'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ args, output: `output.${outExt}` }),
+    });
+    if (!response.ok) throw await failed(response, 'FFmpeg no pudo procesar el archivo.');
+    return { blob: new Blob([await response.blob()], { type: MIME[outExt] || 'application/octet-stream' }), name };
+  } finally {
+    clearInterval(timer);
   }
 }
 

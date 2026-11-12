@@ -104,7 +104,9 @@ function semitones(v) {
   return v.semitones;
 }
 
-const FFMPEG_NOTE = 'La primera vez se carga FFmpeg (~7 MB). El proceso usa tu dispositivo: los archivos grandes tardan, sobre todo en el móvil.';
+const FFMPEG_NOTE = DESKTOP
+  ? 'Usa el FFmpeg incluido en la app y, si la hay, la tarjeta gráfica.'
+  : 'La primera vez se carga FFmpeg (~7 MB). El proceso usa tu dispositivo: los archivos grandes tardan, sobre todo en el móvil.';
 
 /** Declares an FFmpeg tool. `build(v, file)` returns { pre, args, outExt }. */
 const ffmpegTool = ({ build, ...tool }) => ({

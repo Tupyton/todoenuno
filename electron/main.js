@@ -71,7 +71,7 @@ function startServer({ download, ffmpeg }) {
         if (req.headers.origin !== origin) return res.writeHead(403).end();
         if (req.method !== 'POST') return res.writeHead(405).end();
         if (url.pathname === '/api/download') return download(req, res);
-        if (url.pathname === '/api/ffmpeg') return ffmpeg(req, res, url);
+        if (url.pathname === '/api/ffmpeg' || url.pathname.startsWith('/api/ffmpeg/')) return ffmpeg(req, res, url);
         if (url.pathname === '/api/tts' || url.pathname === '/api/voices') return handleSpeech(req, res, url);
         return res.writeHead(404).end();
       }
