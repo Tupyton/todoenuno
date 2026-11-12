@@ -1,4 +1,4 @@
-import { h, formatBytes, clamp } from './ui.js';
+import { h, formatBytes, clamp, base } from './ui.js';
 
 function mediaEl(type, url) {
   if (type.startsWith('image/')) return h('img', { src: url, alt: 'Vista previa' });
@@ -228,6 +228,76 @@ export function fieldEl(field, values, onInput) {
   );
 }
 
+/** Whether `file` is one of the types an `accept` list ("image/*,.pdf") names. */
+function accepts(file, accept) {
+  if (!accept) return true;
+  const name = file.name.toLowerCase();
+  return accept.split(',').some((rule) => {
+    const r = rule.trim().toLowerCase();
+    if (r.startsWith('.')) return name.endsWith(r);
+    if (r.endsWith('/*')) return file.type.startsWith(r.slice(0, -1));
+    return file.type === r;
+  });
+}
+
+/**
+ * Runs a tool on the matching files of a folder the user picks and writes the results to a "TodoEnUno"
+ * folder inside it: once per file, or once with all of them for tools that take several files.
+ * Chromium browsers and the desktop app only (File System Access API).
+ */
+async function processFolder(tool, values, setStatus) {
+  let folder;
+  try {
+    folder = await window.showDirectoryPicker({ mode: 'readwrite' });
+  } catch {
+    return; // Closing the picker is not an error.
+  }
+  const files = [];
+  for await (const handle of folder.values()) {
+    if (handle.kind !== 'file') continue;
+    const file = await handle.getFile();
+    if (accepts(file, tool.files.accept)) files.push(file);
+  }
+  if (!files.length) return setStatus('La carpeta no tiene archivos que esta herramienta pueda usar.', true);
+  files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const target = await folder.getDirectoryHandle('TodoEnUno', { create: true });
+  const used = new Set();
+  const save = async (blob, name) => {
+    let unique = name;
+    for (let n = 1; used.has(unique); n++) unique = name.replace(/(\.[^.]*)?$/, `-${n}$1`);
+    used.add(unique);
+    const writable = await (await target.getFileHandle(unique, { create: true })).createWritable();
+    await writable.write(blob);
+    await writable.close();
+  };
+  let saved = 0;
+  const keep = async (result, from) => {
+    for (const item of [result].flat()) {
+      if (item?.blob) await save(item.blob, item.name);
+      else if (typeof item === 'string') await save(new Blob([item], { type: 'text/plain' }), `${base(from)}.txt`);
+      else continue;
+      saved++;
+    }
+  };
+  const run = (batch) => tool.run({ files: batch, file: batch[0], text: '', v: { ...values }, progress: () => {} });
+  const failed = [];
+  if (tool.files.multiple) {
+    setStatus(`Procesando ${files.length} archivos…`);
+    await keep(await run(files), folder.name);
+  } else {
+    for (const [i, file] of files.entries()) {
+      setStatus(`Procesando ${i + 1} de ${files.length}: ${file.name}`);
+      try {
+        await keep(await run([file]), file.name);
+      } catch (error) {
+        failed.push(`${file.name}: ${error.message || error}`);
+      }
+    }
+  }
+  const done = `Listo: ${saved} ${saved === 1 ? 'archivo guardado' : 'archivos guardados'} en la carpeta «TodoEnUno».`;
+  setStatus(failed.length ? `${done}\nNo se pudieron procesar:\n${failed.join('\n')}` : done, failed.length > 0);
+}
+
 /**
  * Renders a declarative tool:
  * { files?: {accept, multiple, optional}, text?: true|{placeholder}, fields?, live?, action?, note?, run(ctx) }
@@ -262,6 +332,30 @@ export function renderTool(tool, root) {
     });
   const fields = (tool.fields || []).map((f) => fieldEl(f, values, onInput));
   const button = !tool.live && h('button', { type: 'button', class: 'btn primary', onclick: run }, tool.action || 'Procesar');
+  const folderButton =
+    button &&
+    zone &&
+    'showDirectoryPicker' in window &&
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'btn',
+        title: 'Aplica la herramienta a todos los archivos de una carpeta',
+        async onclick() {
+          button.disabled = folderButton.disabled = true;
+          out.clear();
+          try {
+            await processFolder(tool, values, setStatus);
+          } catch (error) {
+            setStatus(error.message || String(error), true);
+          } finally {
+            button.disabled = folderButton.disabled = false;
+          }
+        },
+      },
+      'Procesar una carpeta',
+    );
 
   async function run() {
     const files = zone ? zone.files : [];
@@ -316,7 +410,7 @@ export function renderTool(tool, root) {
       textIn,
       fields.length > 0 && h('div', { class: 'fields' }, fields),
       tool.note && h('p', { class: 'note' }, tool.note),
-      button,
+      folderButton ? h('div', { class: 'result-row' }, button, folderButton) : button,
       bar,
       status,
       out.el,
