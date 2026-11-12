@@ -192,7 +192,7 @@ export function resultView() {
   return { el, show, clear };
 }
 
-function fieldEl(field, values, onInput) {
+export function fieldEl(field, values, onInput) {
   const { key, label, type = 'text', value, options, hint, ...attrs } = field;
   const numeric = type === 'number' || type === 'range';
   const read = (input) => (type === 'checkbox' ? input.checked : numeric ? Number(input.value) : input.value);

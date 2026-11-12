@@ -5,7 +5,7 @@ import {
   ScreenShare, Sigma, SlidersHorizontal, Split, SquareRoundCorner, Stamp, Trash2, Type, Video, Volume2, VolumeX, Wrench,
   ArrowLeftRight, Captions, ClipboardList, FileCode, GitCompare, Grid3x3, LayoutGrid, Laugh, LockKeyhole, LockKeyholeOpen,
   FileOutput, FileSpreadsheet, FileType, Files, Presentation, Sheet,
-  Percent, Pipette, Regex, Ruler, ScanLine, Signature, Smartphone, Subtitles, Table, Timer,
+  Percent, Pipette, Regex, Ruler, ScanLine, ScanText, Signature, Smartphone, Subtitles, Table, Timer,
   Repeat, Volume1, Maximize2, Vibrate, Rewind, Music2, AudioLines, Mic, Eraser, ImagePlus, FileCode2, AudioWaveform, CaseUpper,
   createElement,
 } from 'lucide';
@@ -66,6 +66,7 @@ const TOOL = {
   'zip-extraer': PackageOpen,
   'imagen-heic': Smartphone,
   'imagen-collage': LayoutGrid,
+  'documento-escanear': ScanText,
   'imagen-meme': Laugh,
   'imagen-censurar': Grid3x3,
   'imagen-colores': Pipette,

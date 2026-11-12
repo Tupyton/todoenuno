@@ -905,3 +905,17 @@ footer.site a:hover strong {
 .get-app .portable:hover {
   color: var(--accent);
 }
+
+.scan-editor {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+}
+
+.scan-editor .note {
+  justify-self: stretch;
+}
+
+.thumb figcaption + figcaption {
+  justify-content: center;
+}
