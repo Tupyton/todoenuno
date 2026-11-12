@@ -28,7 +28,7 @@ jobs:
       - name: Descargar yt-dlp y FFmpeg
         run: npm run desktop:binaries
 
-      - name: Compilar instaladores y portable
+      - name: Compilar instalador y portable
         run: npx electron-builder --win --x64 --publish never
 
       - name: Publicar la versión
@@ -39,9 +39,8 @@ jobs:
           # electron-builder gives the MSI's name to the ZIP too, so the MSI is named here instead.
           mv release/*.msi release/TodoEnUno-Instalador.msi
           gh release create "$GITHUB_REF_NAME" \
-            release/TodoEnUno-Instalador.exe \
             release/TodoEnUno-Instalador.msi \
             release/TodoEnUno-Portable.exe \
             release/TodoEnUno-*-win.zip \
             --title "TodoEnUno ${GITHUB_REF_NAME#v}" \
-            --notes "Descarga **TodoEnUno-Instalador.exe** o **TodoEnUno-Instalador.msi** (Windows Installer) para instalar la app, o **TodoEnUno-Portable.exe** para usarla sin instalar."
+            --notes "Descarga **TodoEnUno-Instalador.msi** para instalar la app, o **TodoEnUno-Portable.exe** para usarla sin instalar."

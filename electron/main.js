@@ -111,7 +111,7 @@ async function checkForUpdate(window) {
     const { tag_name: latest } = await response.json();
     if (!latest || !isNewer(latest, app.getVersion())) return;
     // electron-builder's portable launcher sets this variable; the installed app does not have it.
-    const file = process.env.PORTABLE_EXECUTABLE_FILE ? 'TodoEnUno-Portable.exe' : 'TodoEnUno-Instalador.exe';
+    const file = process.env.PORTABLE_EXECUTABLE_FILE ? 'TodoEnUno-Portable.exe' : 'TodoEnUno-Instalador.msi';
     const { response: choice } = await dialog.showMessageBox(window, {
       type: 'info',
       title: 'Nueva versión disponible',

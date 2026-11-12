@@ -58,12 +58,6 @@
     "win": {
       "target": [
         {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
           "target": "msi",
           "arch": [
             "x64"
@@ -90,15 +84,6 @@
         }
       ],
       "artifactName": "TodoEnUno-${version}-win.${ext}"
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "TodoEnUno",
-      "artifactName": "TodoEnUno-Instalador.${ext}"
     },
     "msi": {
       "oneClick": false,

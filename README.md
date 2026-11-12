@@ -4,7 +4,7 @@ Más de 90 herramientas de imagen, PDF, documentos, video, audio y texto en una 
 
 - Sitio: https://todoenunoapp.netlify.app
 - Versión para Windows:
-  - [TodoEnUno-Instalador.exe](https://github.com/Tupyton/todoenuno/releases/latest/download/TodoEnUno-Instalador.exe): se instala con accesos directos y se desinstala desde Windows.
+  - [TodoEnUno-Instalador.msi](https://github.com/Tupyton/todoenuno/releases/latest/download/TodoEnUno-Instalador.msi): instalador de Windows (MSI), con accesos directos y desinstalación desde Windows.
   - [TodoEnUno-Portable.exe](https://github.com/Tupyton/todoenuno/releases/latest/download/TodoEnUno-Portable.exe): se abre sin instalar.
 
 La versión para Windows incluye además el descargador de video y audio, que un navegador no puede ofrecer por sí solo, y avisa al abrirse cuando hay una versión nueva.
