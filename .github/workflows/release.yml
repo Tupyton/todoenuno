@@ -36,6 +36,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # electron-builder gives the MSI's name to the ZIP too, so the MSI is named here instead.
+          mv release/*.msi release/TodoEnUno-Instalador.msi
           gh release create "$GITHUB_REF_NAME" \
             release/TodoEnUno-Instalador.exe \
             release/TodoEnUno-Instalador.msi \

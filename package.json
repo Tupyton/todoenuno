@@ -105,8 +105,7 @@
       "perMachine": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "TodoEnUno",
-      "artifactName": "TodoEnUno-Instalador.${ext}"
+      "shortcutName": "TodoEnUno"
     },
     "portable": {
       "artifactName": "TodoEnUno-Portable.${ext}"
