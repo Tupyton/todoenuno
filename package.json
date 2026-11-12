@@ -1,19 +1,18 @@
 {
   "name": "todoenuno",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "downloader": "node server/downloader.js",
-    "predev": "node scripts/ffmpeg-core.mjs",
-    "prebuild": "node scripts/ffmpeg-core.mjs",
+    "predev": "node scripts/ffmpeg-core.mjs && node scripts/libarchive.mjs",
+    "prebuild": "node scripts/ffmpeg-core.mjs && node scripts/libarchive.mjs",
     "desktop": "npm run build && electron .",
     "desktop:binaries": "node scripts/desktop-binaries.mjs",
-    "desktop:win": "npm run build && npm run desktop:binaries && electron-builder --win --x64",
-    "desktop:win:installer": "npm run build && npm run desktop:binaries && electron-builder --win nsis --x64"
+    "desktop:win": "npm run build && npm run desktop:binaries && electron-builder --win --x64"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
@@ -22,6 +21,7 @@
     "heic2any": "^0.0.4",
     "jsqr": "^1.4.0",
     "jszip": "^3.10.2",
+    "libarchive.js": "^2.0.2",
     "lucide": "^1.71.0",
     "marked": "^18.2.0",
     "pdf-lib": "^1.17.1",
@@ -58,6 +58,12 @@
     "win": {
       "target": [
         {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
           "target": "portable",
           "arch": [
             "x64"
@@ -79,12 +85,16 @@
       ]
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
-      "artifactName": "TodoEnUno-Instalador-${version}.${ext}"
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TodoEnUno",
+      "artifactName": "TodoEnUno-Instalador.${ext}"
     },
     "portable": {
-      "artifactName": "TodoEnUno-Portable-${version}.${ext}"
+      "artifactName": "TodoEnUno-Portable.${ext}"
     },
     "linux": {
       "target": [

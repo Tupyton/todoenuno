@@ -889,5 +889,19 @@ footer.site a:hover strong {
 }
 
 .get-app {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 16px;
   margin: 16px 0 0;
+}
+
+.get-app .portable {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.get-app .portable:hover {
+  color: var(--accent);
 }

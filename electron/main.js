@@ -1,6 +1,6 @@
 // Desktop app: serves the built site from this computer and adds what a browser tab cannot do
-// by itself (downloading with yt-dlp, choosing a screen to record).
-import { app, BrowserWindow, desktopCapturer, Menu, session, shell } from 'electron';
+// by itself (downloading with yt-dlp, choosing a screen to record, native FFmpeg and Windows voices).
+import { app, BrowserWindow, desktopCapturer, dialog, Menu, session, shell } from 'electron';
 import { spawn } from 'node:child_process';
 import { createReadStream, existsSync } from 'node:fs';
 import { copyFile, mkdir } from 'node:fs/promises';
@@ -8,12 +8,14 @@ import { createServer } from 'node:http';
 import { extname, join, normalize, sep } from 'node:path';
 import { createBrotliDecompress } from 'node:zlib';
 import { createDownloadHandler } from '../server/downloader.js';
+import { createFFmpegHandler, handleSpeech } from './native.js';
 
 // A fixed port keeps the page's address the same on every start, and with it the saved
 // favourites, recent tools and theme. If something else has it, any free port will do for this run.
 const PORT = 47823;
 const DIST = join(app.getAppPath(), 'dist');
 const WASM = '/ffmpeg/ffmpeg-core.wasm';
+const RELEASES = 'https://github.com/Tupyton/todoenuno/releases';
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -57,7 +59,7 @@ function sendFile(url, res) {
   else file.pipe(res);
 }
 
-function startServer(download) {
+function startServer({ download, ffmpeg }) {
   return new Promise((resolve, reject) => {
     const server = createServer((req, res) => {
       const { port } = server.address();
@@ -67,7 +69,10 @@ function startServer(download) {
       const url = new URL(req.url, origin);
       if (url.pathname.startsWith('/api/')) {
         if (req.headers.origin !== origin) return res.writeHead(403).end();
-        if (req.method === 'POST' && url.pathname === '/api/download') return download(req, res);
+        if (req.method !== 'POST') return res.writeHead(405).end();
+        if (url.pathname === '/api/download') return download(req, res);
+        if (url.pathname === '/api/ffmpeg') return ffmpeg(req, res, url);
+        if (url.pathname === '/api/tts' || url.pathname === '/api/voices') return handleSpeech(req, res, url);
         return res.writeHead(404).end();
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') return res.writeHead(405).end();
@@ -80,6 +85,46 @@ function startServer(download) {
     server.once('listening', () => resolve(`http://127.0.0.1:${server.address().port}`));
     server.listen(PORT, '127.0.0.1');
   });
+}
+
+/** True when version `a` ("1.2.3", with or without a leading "v") is newer than `b`. */
+function isNewer(a, b) {
+  const parts = (v) => v.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  }
+  return false;
+}
+
+/**
+ * Tells the user when a newer version is published on GitHub and offers the same kind of file
+ * they are running (the portable .exe or the installer). Best effort: offline, it says nothing.
+ */
+async function checkForUpdate(window) {
+  if (!app.isPackaged) return;
+  try {
+    const response = await fetch('https://api.github.com/repos/Tupyton/todoenuno/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json' },
+    });
+    if (!response.ok) return;
+    const { tag_name: latest } = await response.json();
+    if (!latest || !isNewer(latest, app.getVersion())) return;
+    // electron-builder's portable launcher sets this variable; the installed app does not have it.
+    const file = process.env.PORTABLE_EXECUTABLE_FILE ? 'TodoEnUno-Portable.exe' : 'TodoEnUno-Instalador.exe';
+    const { response: choice } = await dialog.showMessageBox(window, {
+      type: 'info',
+      title: 'Nueva versión disponible',
+      message: `Hay una nueva versión de TodoEnUno (${latest.replace(/^v/, '')}).`,
+      detail: `Tienes la ${app.getVersion()}. ¿Quieres descargarla ahora?`,
+      buttons: ['Descargar', 'Más tarde'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (choice === 0) shell.openExternal(`${RELEASES}/latest/download/${file}`);
+  } catch {
+    // No connection or GitHub unavailable: try again on the next start.
+  }
 }
 
 function openWindow(origin) {
@@ -107,6 +152,7 @@ function openWindow(origin) {
     external(url);
   });
   window.loadURL(origin);
+  window.webContents.once('did-finish-load', () => checkForUpdate(window));
 }
 
 // A second start focuses the window that is already open: two copies would fight over the port.
@@ -129,6 +175,8 @@ else {
         .then(([screen]) => callback(screen ? { video: screen } : {}))
         .catch(() => callback({}));
     });
-    openWindow(await startServer(createDownloadHandler(await downloadTools())));
+    const tools = await downloadTools();
+    const ffmpeg = tools.ffmpegLocation ? join(tools.ffmpegLocation, 'ffmpeg.exe') : 'ffmpeg';
+    openWindow(await startServer({ download: createDownloadHandler(tools), ffmpeg: createFFmpegHandler(ffmpeg) }));
   });
 }

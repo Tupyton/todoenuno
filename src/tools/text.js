@@ -1,5 +1,5 @@
 import { encode } from '../lib/image.js';
-import { base } from '../ui.js';
+import { base, ext } from '../ui.js';
 
 const LOREM =
   'lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua enim ad minim veniam quis nostrud exercitation ullamco laboris nisi aliquip ex ea commodo consequat duis aute irure in reprehenderit voluptate velit esse cillum fugiat nulla pariatur excepteur sint occaecat cupidatat non proident sunt culpa qui officia deserunt mollit anim id est laborum'.split(
@@ -178,7 +178,26 @@ async function zipCreate({ files, progress }) {
   return { blob, name: files.length === 1 ? `${base(files[0].name)}.zip` : 'archivos.zip' };
 }
 
-async function zipExtract({ file, progress }) {
+/** Reads 7z, RAR, TAR, GZ and other formats with libarchive (WebAssembly, loaded only when needed). */
+async function archiveEntries(file, progress) {
+  const { Archive } = await import('libarchive.js');
+  Archive.init({ workerUrl: new URL('/libarchive/worker-bundle.js', location.href).href });
+  let archive;
+  try {
+    archive = await Archive.open(file);
+    if (await archive.hasEncryptedData()) throw new Error('encrypted');
+  } catch {
+    throw new Error('No se pudo abrir el archivo: no es un comprimido compatible o está protegido con contraseña.');
+  }
+  // After extractFiles() the listing holds the extracted files themselves.
+  await archive.extractFiles();
+  const entries = (await archive.getFilesArray()).filter((e) => e.file instanceof File).map((e) => ({ blob: e.file, path: `${e.path}${e.file.name}` }));
+  progress(1);
+  await archive.close();
+  return entries;
+}
+
+async function zipEntries(file, progress) {
   const { default: JSZip } = await import('jszip');
   let zip;
   try {
@@ -186,15 +205,27 @@ async function zipExtract({ file, progress }) {
   } catch {
     throw new Error('El archivo no es un ZIP válido o está protegido con contraseña.');
   }
-  const entries = Object.values(zip.files).filter((entry) => !entry.dir);
-  if (!entries.length) throw new Error('El ZIP no contiene archivos.');
-  const results = [];
-  for (const [i, entry] of entries.entries()) {
-    // Entry names come from the archive: flatten the path so it is a plain file name.
-    results.push({ blob: await entry.async('blob'), name: entry.name.replace(/[\\/]+/g, '_') });
-    progress((i + 1) / entries.length);
+  const files = Object.values(zip.files).filter((entry) => !entry.dir);
+  const entries = [];
+  for (const [i, entry] of files.entries()) {
+    entries.push({ blob: await entry.async('blob'), path: entry.name });
+    progress((i + 1) / files.length);
   }
-  return results;
+  return entries;
+}
+
+async function archiveExtract({ file, v, progress }) {
+  // JSZip is already part of the app; everything else needs libarchive.
+  const entries = ext(file.name) === 'zip' ? await zipEntries(file, progress) : await archiveEntries(file, progress);
+  if (!entries.length) throw new Error('El comprimido no contiene archivos.');
+  if (v.output === 'zip') {
+    const { default: JSZip } = await import('jszip');
+    const zip = new JSZip();
+    for (const { blob, path } of entries) zip.file(path, blob);
+    return { blob: await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), name: `${base(file.name.replace(/\.tar(\.\w+)$/i, '$1'))}.zip` };
+  }
+  // Entry names come from the archive: flatten the path so it is a plain file name.
+  return entries.map(({ blob, path }) => ({ blob, name: path.replace(/[\\/]+/g, '_') }));
 }
 
 const algorithm = { key: 'algorithm', label: 'Algoritmo', type: 'select', value: 'SHA-256', options: ['SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'] };
@@ -429,10 +460,23 @@ export default [
   }),
   util({
     id: 'zip-extraer',
-    name: 'Extraer ZIP',
-    desc: 'Abre un ZIP y descarga su contenido.',
-    files: { accept: '.zip,application/zip', preview: false },
+    name: 'Extraer comprimido',
+    desc: 'Abre un ZIP, 7z, RAR, TAR o GZ y descarga su contenido, o pásalo a ZIP.',
+    files: { accept: '.zip,.7z,.rar,.tar,.gz,.tgz,.bz2,.tbz2,.xz,.txz,.cab,.iso,application/zip', preview: false },
+    fields: [
+      {
+        key: 'output',
+        label: 'Resultado',
+        type: 'select',
+        value: 'files',
+        options: [
+          ['files', 'Los archivos sueltos'],
+          ['zip', 'Un ZIP con todo (convertir a ZIP)'],
+        ],
+      },
+    ],
+    note: 'Los formatos distintos de ZIP cargan un módulo de 1 MB la primera vez. Los comprimidos con contraseña no se pueden abrir.',
     action: 'Extraer',
-    run: zipExtract,
+    run: archiveExtract,
   }),
 ];

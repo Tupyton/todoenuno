@@ -12,6 +12,8 @@ const brotliWasm = (server) => {
 };
 
 const WASM = '/ffmpeg/ffmpeg-core.wasm';
+// Only needed by the archive extractor: cached the first time it is used, not on every visit.
+const ARCHIVE_WASM = '/libarchive/libarchive.wasm';
 
 function walk(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
@@ -19,7 +21,7 @@ function walk(dir) {
 
 /**
  * Writes dist/sw.js: precaches every built file so the app works offline.
- * The FFmpeg wasm (7 MB) is left out and cached the first time a video or audio tool loads it.
+ * The FFmpeg wasm (7 MB) and the archive one (1 MB) are left out and cached the first time a tool loads them.
  */
 function serviceWorker() {
   return {
@@ -33,7 +35,7 @@ function serviceWorker() {
           hash.update(path).update(readFileSync(path));
           return `/${relative(dist, path).split('\\').join('/')}`;
         })
-        .filter((url) => url !== WASM && url !== '/_headers' && url !== '/sw.js')
+        .filter((url) => url !== WASM && url !== ARCHIVE_WASM && url !== '/_headers' && url !== '/sw.js')
         .map((url) => (url === '/index.html' ? '/' : url));
       const cache = `todoenuno-${hash.digest('hex').slice(0, 12)}`;
       writeFileSync(

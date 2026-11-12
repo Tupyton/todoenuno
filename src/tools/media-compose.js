@@ -116,6 +116,96 @@ async function textOverVideo({ file, v, progress }) {
   });
 }
 
+const isAudio = (f) => f.type.startsWith('audio/') || /^(mp3|m4a|aac|wav|ogg|oga|opus|flac|weba)$/.test(ext(f.name));
+const isImage = (f) => f.type.startsWith('image/');
+
+function addAudio({ files, v, progress }) {
+  const audio = files.find(isAudio);
+  const video = files.find((f) => f !== audio && !isAudio(f));
+  if (!audio || !video) throw new Error('Elige dos archivos: el video y el audio.');
+  const input = `input.${ext(video.name) || 'bin'}`;
+  const track = `track.${ext(audio.name) || 'bin'}`;
+  const volume = `volume=${v.volume / 100}`;
+  // Mixing keeps the video's own sound under the new one; otherwise the new audio replaces it.
+  const audioArgs =
+    v.mode === 'mix'
+      ? ['-filter_complex', `[1:a]${volume}[new];[0:a][new]amix=inputs=2:duration=first:dropout_transition=0[a]`, '-map', '0:v', '-map', '[a]']
+      : // apad fills with silence when the audio is shorter, so -shortest always stops with the video.
+        ['-map', '0:v', '-map', '1:a', '-filter:a', `${volume},apad`];
+  return execFFmpeg({
+    inputs: [
+      { name: input, data: video },
+      { name: track, data: audio },
+    ],
+    args: [
+      '-i', input, ...(v.loop ? ['-stream_loop', '-1'] : []), '-i', track,
+      ...audioArgs, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart',
+    ],
+    outExt: 'mp4',
+    name: `${base(video.name)}-con-audio.mp4`,
+    progress,
+  });
+}
+
+const CORNER = {
+  'top-left': ['M', 'M'],
+  'top-right': ['W-w-M', 'M'],
+  'bottom-left': ['M', 'H-h-M'],
+  'bottom-right': ['W-w-M', 'H-h-M'],
+  center: ['(W-w)/2', '(H-h)/2'],
+};
+
+async function imageOverVideo({ files, v, progress }) {
+  const image = files.find(isImage);
+  const video = files.find((f) => f !== image && !isImage(f));
+  if (!image || !video) throw new Error('Elige dos archivos: el video y la imagen.');
+  const start = time(v.start, 'El inicio');
+  const end = time(v.end, 'El fin');
+  const [width] = await videoSize(video);
+  const size = Math.max(2, Math.round((width * v.size) / 100 / 2) * 2);
+  const margin = Math.round(width * 0.03);
+  const [x, y] = CORNER[v.position].map((e) => e.replaceAll('M', margin));
+  const enable = start || end ? `:enable='between(t,${start ? toSeconds(start) : 0},${end ? toSeconds(end) : 1e9})'` : '';
+  const input = `input.${ext(video.name) || 'bin'}`;
+  const picture = `picture.${ext(image.name) || 'png'}`;
+  return execFFmpeg({
+    inputs: [
+      { name: input, data: video },
+      { name: picture, data: image },
+    ],
+    args: [
+      '-i', input, '-i', picture,
+      '-filter_complex',
+      `[1:v]scale=${size}:-1,format=rgba,colorchannelmixer=aa=${v.opacity / 100}[logo];[0:v][logo]overlay=${x}:${y}${enable},scale=trunc(iw/2)*2:trunc(ih/2)*2[v]`,
+      '-map', '[v]', '-map', '0:a?', ...H264, '-c:a', 'aac', '-movflags', '+faststart',
+    ],
+    outExt: 'mp4',
+    name: `${base(video.name)}-imagen.mp4`,
+    progress,
+  });
+}
+
+/** delogo needs the area in pixels and fully inside the frame (at least 1px from each edge). */
+async function removeLogo({ file, v, progress }) {
+  const [width, height] = await videoSize(file);
+  if (!width) throw new Error('No se pudo leer el tamaño del video.');
+  const w = Math.max(4, Math.round((width * v.width) / 100));
+  const ht = Math.max(4, Math.round((height * v.height) / 100));
+  const margin = Math.round(Math.min(width, height) * 0.02);
+  const right = v.position.endsWith('right');
+  const bottom = v.position.startsWith('bottom');
+  const x = Math.min(width - w - 1, Math.max(1, right ? width - w - margin : margin));
+  const y = Math.min(height - ht - 1, Math.max(1, bottom ? height - ht - margin : margin));
+  const input = `input.${ext(file.name) || 'bin'}`;
+  return execFFmpeg({
+    inputs: [{ name: input, data: file }],
+    args: ['-i', input, ...x264(23, `delogo=x=${x}:y=${y}:w=${w}:h=${ht}`), '-c:a', 'copy', '-movflags', '+faststart'],
+    outExt: 'mp4',
+    name: `${base(file.name)}-sin-logo.mp4`,
+    progress,
+  });
+}
+
 function addSubtitles({ files, progress }) {
   const isSubs = (f) => /^(srt|vtt)$/.test(ext(f.name));
   const subs = files.find(isSubs);
@@ -201,6 +291,85 @@ export default [
     files: { accept: 'video/*,.srt,.vtt', multiple: true, preview: false },
     note: 'Elige el video y el archivo de subtítulos. Quedan como pista que se activa en el reproductor, sin recomprimir el video.',
     run: addSubtitles,
+  },
+  {
+    id: 'video-anadir-audio',
+    name: 'Añadir audio a video',
+    desc: 'Pon música o una voz a un video, en lugar de su sonido o mezclada con él.',
+    cat: 'video',
+    action: 'Añadir audio',
+    files: { accept: 'video/*,audio/*', multiple: true, preview: false },
+    fields: [
+      {
+        key: 'mode',
+        label: 'Sonido original',
+        type: 'select',
+        value: 'replace',
+        options: [
+          ['replace', 'Reemplazarlo por el nuevo audio'],
+          ['mix', 'Mezclarlo con el nuevo audio'],
+        ],
+      },
+      { key: 'volume', label: 'Volumen del audio nuevo (%)', type: 'range', min: 0, max: 200, step: 5, value: 100 },
+      { key: 'loop', label: 'Repetir el audio si es más corto que el video', type: 'checkbox', value: true },
+    ],
+    note: `Elige el video y el archivo de audio. El resultado dura lo mismo que el video. Para mezclar, el video debe tener sonido. ${FFMPEG_NOTE}`,
+    run: addAudio,
+  },
+  {
+    id: 'video-imagen',
+    name: 'Imagen sobre video',
+    desc: 'Pon un logo, una marca de agua o una foto encima del video.',
+    cat: 'video',
+    action: 'Añadir imagen',
+    files: { accept: 'video/*,image/*', multiple: true, preview: false },
+    fields: [
+      {
+        key: 'position',
+        label: 'Posición',
+        type: 'select',
+        value: 'top-right',
+        options: [
+          ['top-left', 'Arriba a la izquierda'],
+          ['top-right', 'Arriba a la derecha'],
+          ['bottom-left', 'Abajo a la izquierda'],
+          ['bottom-right', 'Abajo a la derecha'],
+          ['center', 'Centro'],
+        ],
+      },
+      { key: 'size', label: 'Ancho (% del video)', type: 'range', min: 5, max: 100, value: 20 },
+      { key: 'opacity', label: 'Opacidad (%)', type: 'range', min: 10, max: 100, step: 5, value: 100 },
+      { key: 'start', label: 'Mostrar desde', placeholder: '0:00', hint: 'Vacío = todo el video.' },
+      { key: 'end', label: 'Mostrar hasta', placeholder: '0:10' },
+    ],
+    note: `Elige el video y la imagen (un PNG con fondo transparente queda mejor para logos). ${FFMPEG_NOTE}`,
+    run: imageOverVideo,
+  },
+  {
+    id: 'video-quitar-logo',
+    name: 'Quitar logo de video',
+    desc: 'Disimula una marca de agua o logo en una esquina del video.',
+    cat: 'video',
+    action: 'Quitar logo',
+    files: { accept: 'video/*' },
+    fields: [
+      {
+        key: 'position',
+        label: 'Esquina del logo',
+        type: 'select',
+        value: 'bottom-right',
+        options: [
+          ['top-left', 'Arriba a la izquierda'],
+          ['top-right', 'Arriba a la derecha'],
+          ['bottom-left', 'Abajo a la izquierda'],
+          ['bottom-right', 'Abajo a la derecha'],
+        ],
+      },
+      { key: 'width', label: 'Ancho de la zona (% del video)', type: 'range', min: 3, max: 50, value: 15 },
+      { key: 'height', label: 'Alto de la zona (% del video)', type: 'range', min: 3, max: 50, value: 10 },
+    ],
+    note: `Rellena la zona con los colores de su alrededor: el logo deja de leerse, pero se nota una mancha suave. ${FFMPEG_NOTE}`,
+    run: removeLogo,
   },
   ffmpegTool({
     id: 'video-encuadre',

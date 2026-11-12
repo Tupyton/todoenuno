@@ -1,5 +1,5 @@
 import './style.css';
-import { DESKTOP, WINDOWS_DOWNLOAD } from './env.js';
+import { DESKTOP, WINDOWS_DOWNLOAD, WINDOWS_PORTABLE } from './env.js';
 import { categoryIcon, lockIcon, toolIcon, uiIcon } from './icons.js';
 import { addRecent, favorites, recents, saveTheme, toggleFavorite } from './store.js';
 import { tools, categories } from './tools/index.js';
@@ -109,14 +109,20 @@ function home() {
       h('p', {}, 'Imágenes, PDF, video, audio y texto. Gratis y privado: los archivos no salen de tu equipo.'),
       search,
       chips,
-      !DESKTOP && WINDOWS_DOWNLOAD && h('p', { class: 'get-app' }, windowsDownload()),
+      !DESKTOP && WINDOWS_DOWNLOAD && windowsDownload(),
     ),
     ...sections.map((s) => s.el),
     empty,
   );
 }
 
-const windowsDownload = () => h('a', { class: 'btn primary', href: WINDOWS_DOWNLOAD }, 'Descargar TodoEnUno para Windows');
+const windowsDownload = () =>
+  h(
+    'p',
+    { class: 'get-app' },
+    h('a', { class: 'btn primary', href: WINDOWS_DOWNLOAD }, 'Descargar TodoEnUno para Windows'),
+    WINDOWS_PORTABLE && h('a', { class: 'portable', href: WINDOWS_PORTABLE }, 'o la versión portable, sin instalar'),
+  );
 
 function favoriteButton(tool) {
   const button = h('button', {

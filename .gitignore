@@ -1,6 +1,6 @@
 node_modules
 dist
 public/ffmpeg
+public/libarchive
 release
 desktop/bin
-.claude

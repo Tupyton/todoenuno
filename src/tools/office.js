@@ -227,6 +227,73 @@ function renderExcel(root) {
   };
 }
 
+async function openExcelDoc(file, doc) {
+  const XLSX = await xlsx();
+  let book;
+  try {
+    book = XLSX.read(await file.arrayBuffer());
+  } catch (error) {
+    console.error(error);
+    throw new Error(`No se pudo abrir ${file.name}: no es una hoja .xlsx válida.`);
+  }
+  const style = doc.head.appendChild(doc.createElement('style'));
+  style.textContent = `body { background: #fff; color: #111; font: 11px/1.35 Calibri, Carlito, Arial, sans-serif; padding: 16px; }
+    h2 { font-size: 14px; margin: 0 0 8px; }
+    section + section { margin-top: 24px; }
+    table { border-collapse: collapse; }
+    td { border: 1px solid #c8c8c8; padding: 2px 6px; white-space: pre-wrap; vertical-align: top; }`;
+  let width = 0;
+  for (const name of book.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(book.Sheets[name], { header: 1, raw: false, defval: '' });
+    if (!rows.length) continue;
+    const columns = Math.max(...rows.map((r) => r.length));
+    const section = doc.body.appendChild(doc.createElement('section'));
+    if (book.SheetNames.length > 1) section.appendChild(doc.createElement('h2')).textContent = name;
+    const table = section.appendChild(doc.createElement('table'));
+    for (const row of rows) {
+      const tr = table.appendChild(doc.createElement('tr'));
+      for (let c = 0; c < columns; c++) tr.appendChild(doc.createElement('td')).textContent = String(row[c] ?? '');
+    }
+    width = Math.max(width, table.offsetWidth + 32);
+  }
+  if (!width) throw new Error('El libro está vacío.');
+  return { width, print: '@page { size: A4 landscape; margin: 12mm; } body { padding: 0; } section { break-after: page; } section:last-child { break-after: auto; }' };
+}
+
+/* PDF to HTML */
+
+const escapeHtml = (text) => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+async function pdfToHtml({ file, v, progress }) {
+  const pages = [];
+  await eachPage(file, async (page, n, total) => {
+    const viewport = page.getViewport({ scale: 1 });
+    if (v.mode === 'image') {
+      const canvas = await renderPage(page, 2);
+      pages.push(`<img src="${canvas.toDataURL('image/jpeg', 0.85)}" width="${Math.round(viewport.width)}" alt="Página ${n}">`);
+    } else {
+      const { paragraphs } = layout(await page.getTextContent(), viewport);
+      const body = paragraphs.map(({ text, size, center }) => {
+        // The largest text on a page is usually a title.
+        const tag = size >= 20 ? 'h1' : size >= 15 ? 'h2' : 'p';
+        return `<${tag}${center ? ' class="center"' : ''}>${escapeHtml(text.replace(/\t/g, ' '))}</${tag}>`;
+      });
+      pages.push(body.join('\n'));
+    }
+    progress(n / total);
+  });
+  if (v.mode === 'text' && !pages.some(Boolean)) {
+    throw new Error('El PDF no contiene texto seleccionable (puede ser un escaneo). Prueba el modo «Idéntico».');
+  }
+  const title = escapeHtml(base(file.name));
+  const css =
+    v.mode === 'image'
+      ? 'body { margin: 0; background: #e5e7eb; } section { margin: 16px auto; width: fit-content; box-shadow: 0 1px 4px #0003; } img { display: block; max-width: 100%; height: auto; }'
+      : 'body { max-width: 760px; margin: 32px auto; padding: 0 16px; font: 16px/1.6 system-ui, sans-serif; color: #111; } .center { text-align: center; } section + section { border-top: 1px solid #ddd; margin-top: 32px; }';
+  const html = `<!doctype html>\n<html lang="es">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${title}</title>\n<style>${css}</style>\n</head>\n<body>\n${pages.map((p) => `<section>\n${p}\n</section>`).join('\n')}\n</body>\n</html>\n`;
+  return { blob: new Blob([html], { type: 'text/html' }), name: `${base(file.name)}.html` };
+}
+
 /** Plain numbers become numeric cells; anything else (dates, codes with leading zeros) stays as written. */
 const cellValue = (text) => (/^-?(0|[1-9]\d*)(\.\d+)?$/.test(text) && text.length < 16 ? Number(text) : text);
 
@@ -390,6 +457,35 @@ export default [
     name: 'Ver Excel',
     desc: 'Abre una hoja de cálculo (.xlsx) y pásala a CSV.',
     render: renderExcel,
+  },
+  {
+    id: 'excel-pdf',
+    cat: 'documentos',
+    name: 'Excel a PDF',
+    desc: 'Abre una hoja de cálculo (.xlsx) y guárdala como PDF.',
+    render: viewer({ accept: '.xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', title: 'Hoja de cálculo', open: openExcelDoc }),
+  },
+  {
+    id: 'pdf-html',
+    cat: 'documentos',
+    name: 'PDF a HTML',
+    desc: 'Convierte un PDF en una página web.',
+    files: { accept: 'application/pdf,.pdf' },
+    fields: [
+      {
+        key: 'mode',
+        label: 'Resultado',
+        type: 'select',
+        value: 'text',
+        options: [
+          ['text', 'Texto (se adapta a la pantalla, se pierde el diseño)'],
+          ['image', 'Idéntico al PDF (páginas como imagen)'],
+        ],
+      },
+    ],
+    note: 'El modo de texto recupera títulos y párrafos, no las tablas ni las imágenes.',
+    action: 'Convertir a HTML',
+    run: pdfToHtml,
   },
   {
     id: 'csv-excel',

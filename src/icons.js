@@ -6,6 +6,7 @@ import {
   ArrowLeftRight, Captions, ClipboardList, FileCode, GitCompare, Grid3x3, LayoutGrid, Laugh, LockKeyhole, LockKeyholeOpen,
   FileOutput, FileSpreadsheet, FileType, Files, Presentation, Sheet,
   Percent, Pipette, Regex, Ruler, ScanLine, Signature, Smartphone, Subtitles, Table, Timer,
+  Repeat, Volume1, Maximize2, Vibrate, Rewind, Music2, AudioLines, Mic, Eraser, ImagePlus, FileCode2, AudioWaveform, CaseUpper,
   createElement,
 } from 'lucide';
 
@@ -93,6 +94,20 @@ const TOOL = {
   diapositivas: Presentation,
   'excel-ver': Sheet,
   'csv-excel': FileSpreadsheet,
+  'video-bucle': Repeat,
+  'video-volumen': Volume1,
+  'video-redimensionar': Maximize2,
+  'video-estabilizar': Vibrate,
+  'video-anadir-audio': Music2,
+  'video-imagen': ImagePlus,
+  'video-quitar-logo': Eraser,
+  'audio-invertir': Rewind,
+  'audio-tono': AudioWaveform, CaseUpper,
+  'audio-ecualizador': AudioLines,
+  'excel-pdf': FileOutput,
+  'pdf-html': FileCode2,
+  'texto-voz': Mic,
+  'fuente-convertir': CaseUpper,
 };
 
 // Icons are decorative: the name next to them carries the meaning.

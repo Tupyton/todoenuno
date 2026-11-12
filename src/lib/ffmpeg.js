@@ -74,3 +74,16 @@ export function runFFmpeg({ file, pre = [], args, outExt, suffix, progress }) {
     progress,
   });
 }
+
+/**
+ * Desktop app only: runs one of the jobs the app's own server knows (see electron/main.js) with the
+ * FFmpeg installed next to it, which is faster and has filters the WebAssembly build lacks.
+ * Returns the output as `{ blob, name }`.
+ */
+export async function runNative({ file, job, params = {}, outExt, suffix }) {
+  const query = new URLSearchParams({ job, ext: ext(file.name) || 'bin', ...params });
+  const response = await fetch(`/api/ffmpeg?${query}`, { method: 'POST', body: file });
+  if (!response.ok) throw new Error((await response.text()) || 'FFmpeg no pudo procesar el archivo.');
+  const blob = await response.blob();
+  return { blob: new Blob([blob], { type: MIME[outExt] || 'application/octet-stream' }), name: `${base(file.name)}-${suffix}.${outExt}` };
+}

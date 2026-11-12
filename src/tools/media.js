@@ -1,4 +1,5 @@
-import { runFFmpeg } from '../lib/ffmpeg.js';
+import { DESKTOP } from '../env.js';
+import { runFFmpeg, runNative } from '../lib/ffmpeg.js';
 import { resultView } from '../tool-page.js';
 import { ext, h } from '../ui.js';
 
@@ -71,6 +72,36 @@ function atempo(factor) {
 function speedFactor(v) {
   if (!(v.speed >= 0.25 && v.speed <= 4)) throw new Error('La velocidad debe estar entre 0.25 y 4.');
   return v.speed;
+}
+
+/** Re-encodes only the audio; the video stream is copied into a container that accepts it. */
+function audioOnly(file) {
+  const extension = ext(file.name);
+  const mp4 = /^(mp4|m4v|mov)$/.test(extension);
+  return { codec: ['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', ...(mp4 ? ['-movflags', '+faststart'] : [])], outExt: mp4 ? extension : 'mkv' };
+}
+
+const SIZES = [
+  ['1920x1080', 'Horizontal 1080p (1920×1080)'],
+  ['1280x720', 'Horizontal 720p (1280×720)'],
+  ['854x480', 'Horizontal 480p (854×480)'],
+  ['1080x1920', 'Vertical 1080p (1080×1920)'],
+  ['720x1280', 'Vertical 720p (720×1280)'],
+  ['1080x1350', 'Vertical 4:5 (1080×1350)'],
+  ['1080x1080', 'Cuadrado (1080×1080)'],
+];
+
+function resizeFilter(size, mode) {
+  const [w, ht] = size.split('x');
+  if (mode === 'stretch') return `scale=${w}:${ht},setsar=1`;
+  if (mode === 'fill') return `scale=${w}:${ht}:force_original_aspect_ratio=increase,crop=${w}:${ht},setsar=1`;
+  return `scale=${w}:${ht}:force_original_aspect_ratio=decrease,pad=${w}:${ht}:(ow-iw)/2:(oh-ih)/2,setsar=1`;
+}
+
+function semitones(v) {
+  if (!(Math.abs(v.semitones) <= 12)) throw new Error('El cambio de tono debe estar entre -12 y 12 semitonos.');
+  if (!v.semitones) throw new Error('Elige un cambio de tono distinto de 0.');
+  return v.semitones;
 }
 
 const FFMPEG_NOTE = 'La primera vez se carga FFmpeg (~7 MB). El proceso usa tu dispositivo: los archivos grandes tardan, sobre todo en el móvil.';
@@ -303,6 +334,69 @@ export default [
     fields: [{ key: 'at', label: 'Instante', value: '0', hint: 'Segundos o mm:ss.' }],
     build: (v) => ({ pre: ['-ss', time(v.at, 'El instante', true)], args: ['-frames:v', '1'], outExt: 'png' }),
   }),
+  ffmpegTool({
+    id: 'video-bucle',
+    name: 'Repetir video en bucle',
+    desc: 'Repite un video varias veces seguidas, sin recomprimir.',
+    cat: 'video',
+    action: 'Repetir',
+    fields: [{ key: 'times', label: 'Veces en total', type: 'number', min: 2, max: 50, value: 3 }],
+    build(v, file) {
+      if (!(v.times >= 2 && v.times <= 50)) throw new Error('Elige entre 2 y 50 repeticiones.');
+      return { pre: ['-stream_loop', String(v.times - 1)], args: ['-c', 'copy'], outExt: ext(file.name) || 'mp4' };
+    },
+  }),
+  ffmpegTool({
+    id: 'video-volumen',
+    name: 'Volumen de video',
+    desc: 'Sube o baja el volumen de un video sin tocar la imagen.',
+    cat: 'video',
+    action: 'Aplicar',
+    fields: [{ key: 'volume', label: 'Volumen (%)', type: 'range', min: 0, max: 400, step: 5, value: 150 }],
+    build(v, file) {
+      const { codec, outExt } = audioOnly(file);
+      return { args: ['-map', '0:v', '-map', '0:a', '-filter:a', `volume=${v.volume / 100}`, ...codec], outExt };
+    },
+  }),
+  ffmpegTool({
+    id: 'video-redimensionar',
+    name: 'Redimensionar video',
+    desc: 'Cambia el tamaño a uno estándar: horizontal, vertical o cuadrado.',
+    cat: 'video',
+    action: 'Redimensionar',
+    fields: [
+      { key: 'size', label: 'Tamaño', type: 'select', value: '1280x720', options: SIZES },
+      {
+        key: 'mode',
+        label: 'Si la forma no coincide',
+        type: 'select',
+        value: 'fit',
+        options: [
+          ['fit', 'Encajar con bandas negras'],
+          ['fill', 'Llenar recortando los bordes'],
+          ['stretch', 'Estirar'],
+        ],
+      },
+    ],
+    build: (v) => ({ args: [...x264(23, resizeFilter(v.size, v.mode)), '-c:a', 'aac', '-movflags', '+faststart'], outExt: 'mp4' }),
+  }),
+  {
+    ...ffmpegTool({
+      id: 'video-estabilizar',
+      name: 'Estabilizar video',
+      desc: 'Reduce el temblor de un video grabado a mano.',
+      cat: 'video',
+      action: 'Estabilizar',
+      build: () => ({ args: [...x264(23, 'deshake'), '-c:a', 'aac', '-movflags', '+faststart'], outExt: 'mp4' }),
+    }),
+    ...(DESKTOP && {
+      note: 'Analiza el video en dos pasadas para un resultado más suave. Puede tardar varios minutos.',
+      run: ({ file }) => runNative({ file, job: 'stabilize', outExt: 'mp4', suffix: 'estabilizar' }),
+    }),
+    ...(!DESKTOP && {
+      note: `${FFMPEG_NOTE} Es un proceso lento en el navegador; la versión para Windows usa un estabilizador mejor y más rápido.`,
+    }),
+  },
   {
     id: 'grabar',
     name: 'Grabar pantalla, cámara o micrófono',
@@ -348,6 +442,62 @@ export default [
     ],
     build: (v) => ({
       args: ['-vn', '-filter:a', `volume=${v.volume / 100},${atempo(speedFactor(v))}`, ...audioCodec(v.format, v.kbps)],
+      outExt: v.format,
+    }),
+  }),
+  ffmpegTool({
+    id: 'audio-invertir',
+    name: 'Invertir audio',
+    desc: 'Reproduce un audio al revés.',
+    cat: 'audio',
+    action: 'Invertir',
+    fields: [audioFormat, bitrate],
+    build: (v) => ({ args: ['-vn', '-filter:a', 'areverse', ...audioCodec(v.format, v.kbps)], outExt: v.format }),
+  }),
+  {
+    ...ffmpegTool({
+      id: 'audio-tono',
+      name: 'Cambiar tono de audio',
+      desc: 'Hace la voz o la música más aguda o más grave sin cambiar la velocidad.',
+      cat: 'audio',
+      action: 'Cambiar tono',
+      fields: [
+        { key: 'semitones', label: 'Semitonos', type: 'range', min: -12, max: 12, step: 1, value: 3, hint: 'Positivo = más agudo. 12 = una octava.' },
+        audioFormat,
+        bitrate,
+      ],
+      build(v) {
+        const factor = 2 ** (semitones(v) / 12);
+        // Playing the samples faster raises the pitch; atempo then restores the original speed.
+        return { args: ['-vn', '-filter:a', `aresample=48000,asetrate=${48000 * factor},aresample=48000,${atempo(1 / factor)}`, ...audioCodec(v.format, v.kbps)], outExt: v.format };
+      },
+    }),
+    ...(DESKTOP && {
+      note: 'Usa Rubber Band, que conserva el timbre natural de la voz.',
+      run: ({ file, v }) =>
+        runNative({ file, job: 'pitch', params: { semitones: semitones(v), format: v.format, kbps: v.kbps }, outExt: v.format, suffix: 'tono' }),
+    }),
+  },
+  ffmpegTool({
+    id: 'audio-ecualizador',
+    name: 'Ecualizador',
+    desc: 'Ajusta graves, medios y agudos de un audio.',
+    cat: 'audio',
+    action: 'Aplicar',
+    fields: [
+      { key: 'bass', label: 'Graves (dB)', type: 'range', min: -15, max: 15, step: 1, value: 4 },
+      { key: 'mid', label: 'Medios (dB)', type: 'range', min: -15, max: 15, step: 1, value: 0 },
+      { key: 'treble', label: 'Agudos (dB)', type: 'range', min: -15, max: 15, step: 1, value: 0 },
+      audioFormat,
+      bitrate,
+    ],
+    build: (v) => ({
+      args: [
+        '-vn',
+        '-filter:a',
+        `bass=g=${v.bass}:f=100,equalizer=f=1000:t=q:w=1:g=${v.mid},treble=g=${v.treble}:f=8000,alimiter=limit=0.98`,
+        ...audioCodec(v.format, v.kbps),
+      ],
       outExt: v.format,
     }),
   }),
