@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Herramientas de imagen, PDF, video, audio y texto que funcionan en tu navegador, sin subir archivos." />
+    <meta name="author" content="Javier Stiven Martínez Cáceres" />
+    <meta name="theme-color" content="#6366f1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+    <script>
+      // Before first paint, so a saved theme does not flash the other one.
+      try {
+        const theme = localStorage.getItem('theme');
+        if (theme) document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
+    <title>TodoEnUno</title>
+  </head>
+  <body>
+    <header class="site">
+      <a class="brand" href="#/">
+        <img src="/favicon.svg" alt="" width="32" height="32" />
+        <span>Todo<b>EnUno</b></span>
+      </a>
+      <button type="button" id="theme" class="icon-btn" aria-label="Cambiar entre tema claro y oscuro"></button>
+    </header>
+    <main id="app"></main>
+    <footer class="site">
+      <p>Todo se procesa en tu navegador. Tus archivos no se suben a ningún servidor.</p>
+      <p>Creado por <a href="https://javiermportfolio.netlify.app/" target="_blank" rel="noopener"><strong>Javier Stiven Martínez Cáceres</strong></a></p>
+    </footer>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

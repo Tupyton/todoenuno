@@ -1,0 +1,5 @@
+/** True inside the desktop app (electron/main.js), which also serves the download API on the page's own address. */
+export const DESKTOP = /\bElectron\//.test(navigator.userAgent);
+
+/** Where the Windows version is downloaded from. Leave empty to hide the download links on the site. */
+export const WINDOWS_DOWNLOAD = 'https://github.com/Tupyton/todoenuno/releases/latest/download/TodoEnUno-Portable.exe';

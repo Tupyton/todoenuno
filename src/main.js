@@ -1,0 +1,190 @@
+import './style.css';
+import { DESKTOP, WINDOWS_DOWNLOAD } from './env.js';
+import { categoryIcon, lockIcon, toolIcon, uiIcon } from './icons.js';
+import { addRecent, favorites, recents, saveTheme, toggleFavorite } from './store.js';
+import { tools, categories } from './tools/index.js';
+import { renderTool } from './tool-page.js';
+import { h } from './ui.js';
+
+const app = document.getElementById('app');
+let cleanup = null;
+
+const normalize = (s) =>
+  s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+
+const tile = (icon) => h('span', { class: 'tile' }, icon);
+const categoryName = Object.fromEntries(categories.map((c) => [c.id, c.name]));
+
+function card(tool) {
+  const blocked = tool.blocked?.();
+  return {
+    haystack: normalize(`${tool.name} ${tool.desc} ${categoryName[tool.cat]}`),
+    el: h(
+      'a',
+      { class: blocked ? 'card blocked' : 'card', href: `#/${tool.id}`, 'data-cat': tool.cat },
+      tile(blocked ? lockIcon() : toolIcon(tool)),
+      h('span', { class: 'card-text' }, h('strong', {}, tool.name), h('span', {}, blocked ? (tool.desktopOnly ? 'Solo en la versión para Windows (.exe).' : 'No disponible en este dispositivo.') : tool.desc)),
+    ),
+  };
+}
+
+function section({ id, name, icon, list, cat }) {
+  const cards = list.map(card);
+  return {
+    cards,
+    el: h(
+      'section',
+      { id, 'data-cat': cat },
+      h('h2', {}, tile(icon), name, h('span', { class: 'count' }, String(cards.length))),
+      h('div', { class: 'grid' }, cards.map((c) => c.el)),
+    ),
+  };
+}
+
+const byIds = (ids) => ids.map((id) => tools.find((t) => t.id === id)).filter(Boolean);
+
+function home() {
+  document.title = 'TodoEnUno · Herramientas en tu navegador';
+  const sections = [
+    { id: 'favoritas', name: 'Favoritas', icon: uiIcon('star'), list: byIds(favorites()) },
+    { id: 'recientes', name: 'Usadas recientemente', icon: uiIcon('history'), list: byIds(recents()) },
+    ...categories.map((category) => ({
+      id: `cat-${category.id}`,
+      name: category.name,
+      icon: categoryIcon(category.id),
+      list: tools.filter((t) => t.cat === category.id),
+      cat: category.id,
+    })),
+  ]
+    .filter((s) => s.list.length)
+    .map(section);
+  const empty = h('p', { class: 'muted', hidden: true }, 'Ninguna herramienta coincide con la búsqueda.');
+  const search = h('input', {
+    type: 'search',
+    class: 'search',
+    placeholder: `Buscar entre ${tools.length} herramientas…`,
+    'aria-label': 'Buscar herramienta',
+    oninput() {
+      const query = normalize(search.value.trim());
+      let total = 0;
+      for (const s of sections) {
+        let visible = 0;
+        for (const c of s.cards) {
+          const match = c.haystack.includes(query);
+          c.el.hidden = !match;
+          if (match) visible++;
+        }
+        s.el.hidden = visible === 0;
+        total += visible;
+      }
+      empty.hidden = total > 0;
+    },
+  });
+  const chips = h(
+    'nav',
+    { class: 'chips', 'aria-label': 'Categorías' },
+    categories.map((category) =>
+      h(
+        'button',
+        {
+          type: 'button',
+          class: 'chip',
+          'data-cat': category.id,
+          // Not a link: the URL hash belongs to the router.
+          onclick: () => document.getElementById(`cat-${category.id}`).scrollIntoView(),
+        },
+        categoryIcon(category.id),
+        category.name,
+      ),
+    ),
+  );
+  app.append(
+    h(
+      'div',
+      { class: 'hero' },
+      h('h1', {}, 'Todas tus herramientas, ', h('em', {}, 'en un solo lugar')),
+      h('p', {}, 'Imágenes, PDF, video, audio y texto. Gratis y privado: los archivos no salen de tu equipo.'),
+      search,
+      chips,
+      !DESKTOP && WINDOWS_DOWNLOAD && h('p', { class: 'get-app' }, windowsDownload()),
+    ),
+    ...sections.map((s) => s.el),
+    empty,
+  );
+}
+
+const windowsDownload = () => h('a', { class: 'btn primary', href: WINDOWS_DOWNLOAD }, 'Descargar TodoEnUno para Windows');
+
+function favoriteButton(tool) {
+  const button = h('button', {
+    type: 'button',
+    class: 'fav',
+    'aria-label': 'Favorita',
+    title: 'Marcar como favorita',
+    'aria-pressed': String(favorites().includes(tool.id)),
+    onclick: () => button.setAttribute('aria-pressed', String(toggleFavorite(tool.id))),
+  });
+  button.append(uiIcon('star'));
+  return button;
+}
+
+function route() {
+  cleanup?.();
+  cleanup = null;
+  app.replaceChildren();
+  const id = decodeURIComponent(location.hash.replace(/^#\/?/, ''));
+  const tool = tools.find((t) => t.id === id);
+  if (!tool) return home();
+
+  document.title = `${tool.name} · TodoEnUno`;
+  const body = h('div', { class: 'tool' });
+  app.append(
+    h(
+      'article',
+      { class: 'tool-page', 'data-cat': tool.cat },
+      h('a', { class: 'back', href: '#/' }, '← Todas las herramientas'),
+      h(
+        'header',
+        { class: 'tool-head' },
+        tile(toolIcon(tool)),
+        h('div', { class: 'tool-title' }, h('h1', {}, tool.name), h('p', { class: 'desc' }, tool.desc)),
+        favoriteButton(tool),
+      ),
+      h('div', { class: 'panel' }, body),
+    ),
+  );
+  const blocked = tool.blocked?.();
+  if (blocked) {
+    body.append(h('p', { class: 'status error' }, blocked));
+    if (tool.desktopOnly && WINDOWS_DOWNLOAD) body.append(windowsDownload());
+  }
+  else {
+    addRecent(tool.id);
+    cleanup = renderTool(tool, body) || null;
+  }
+  window.scrollTo(0, 0);
+}
+
+function themeToggle() {
+  const button = document.getElementById('theme');
+  const root = document.documentElement;
+  const isDark = () => (root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches);
+  const paint = () => button.replaceChildren(uiIcon(isDark() ? 'sun' : 'moon'));
+  button.addEventListener('click', () => {
+    root.dataset.theme = isDark() ? 'light' : 'dark';
+    saveTheme(root.dataset.theme);
+    paint();
+  });
+  paint();
+}
+
+themeToggle();
+window.addEventListener('hashchange', route);
+route();
+
+// Installable and usable offline. Only in the built site: a worker would cache stale modules during development.
+// Not in the desktop app, where the files are already on the computer.
+if (import.meta.env.PROD && !DESKTOP && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');

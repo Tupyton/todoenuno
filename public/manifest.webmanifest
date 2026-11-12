@@ -1,0 +1,15 @@
+{
+  "name": "TodoEnUno",
+  "short_name": "TodoEnUno",
+  "description": "Herramientas de imagen, PDF, video, audio y texto que funcionan en tu navegador.",
+  "lang": "es",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0e1016",
+  "theme_color": "#6366f1",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
