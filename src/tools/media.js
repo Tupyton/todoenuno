@@ -116,6 +116,34 @@ const ffmpegTool = ({ build, ...tool }) => ({
   run: ({ file, v, progress }) => runFFmpeg({ file, progress, suffix: tool.id.split('-').pop(), ...build(v, file) }),
 });
 
+/**
+ * Desktop app: shows the screens and windows that can be recorded and tells the app which one was picked.
+ * Resolves to false when the user cancels.
+ */
+async function pickSource(container) {
+  const response = await fetch('/api/sources', { method: 'POST' });
+  if (!response.ok) throw new Error(await response.text());
+  const sources = await response.json();
+  return new Promise((resolve) => {
+    const done = async (id) => {
+      container.replaceChildren();
+      if (id) await fetch(`/api/sources/choose?${new URLSearchParams({ id })}`, { method: 'POST' });
+      resolve(!!id);
+    };
+    container.replaceChildren(
+      h('p', { class: 'note' }, 'Elige qué quieres grabar:'),
+      h(
+        'div',
+        { class: 'thumbs' },
+        sources.map(({ id, name, thumbnail }) =>
+          h('button', { type: 'button', class: 'thumb source', title: name, onclick: () => done(id) }, h('img', { src: thumbnail, alt: '' }), h('span', {}, name)),
+        ),
+      ),
+      h('button', { type: 'button', class: 'btn', onclick: () => done(null) }, 'Cancelar'),
+    );
+  });
+}
+
 function renderRecorder(root) {
   let recorder = null;
   let stream = null;
@@ -139,6 +167,11 @@ function renderRecorder(root) {
     const kind = source.value;
     status.classList.remove('error');
     try {
+      if (DESKTOP && kind === 'screen') {
+        button.disabled = true;
+        const picked = await pickSource(picker).finally(() => (button.disabled = false));
+        if (!picked) return;
+      }
       stream =
         kind === 'screen'
           ? await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
@@ -175,7 +208,8 @@ function renderRecorder(root) {
     { type: 'button', class: 'btn primary', onclick: () => (recorder?.state === 'recording' ? stop() : start()) },
     'Iniciar grabación',
   );
-  root.append(h('div', { class: 'fields' }, h('label', { class: 'field' }, h('span', {}, 'Fuente'), source)), button, status, out.el);
+  const picker = h('div', { class: 'source-picker' });
+  root.append(h('div', { class: 'fields' }, h('label', { class: 'field' }, h('span', {}, 'Fuente'), source)), button, picker, status, out.el);
   return () => {
     if (recorder) recorder.onstop = null;
     stop();

@@ -59,6 +59,27 @@ function sendFile(url, res) {
   else file.pipe(res);
 }
 
+/*
+ * Screen recording: Electron has no picker of its own, so the page lists the screens and windows,
+ * the user picks one there, and the next capture request gets that one.
+ */
+let chosenSource = null;
+
+async function listSources(res) {
+  try {
+    const sources = await desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 } });
+    const list = sources.map(({ id, name, thumbnail }) => ({ id, name, thumbnail: thumbnail.toDataURL() }));
+    res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(list));
+  } catch (error) {
+    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' }).end(`No se pudieron leer las pantallas: ${error.message}`);
+  }
+}
+
+function chooseSource(res, url) {
+  chosenSource = url.searchParams.get('id');
+  res.writeHead(204).end();
+}
+
 function startServer({ download, ffmpeg }) {
   return new Promise((resolve, reject) => {
     const server = createServer((req, res) => {
@@ -73,6 +94,8 @@ function startServer({ download, ffmpeg }) {
         if (url.pathname === '/api/download') return download(req, res);
         if (url.pathname === '/api/ffmpeg' || url.pathname.startsWith('/api/ffmpeg/')) return ffmpeg(req, res, url);
         if (url.pathname === '/api/tts' || url.pathname === '/api/voices') return handleSpeech(req, res, url);
+        if (url.pathname === '/api/sources') return listSources(res);
+        if (url.pathname === '/api/sources/choose') return chooseSource(res, url);
         return res.writeHead(404).end();
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') return res.writeHead(405).end();
@@ -168,11 +191,16 @@ else {
 
   app.whenReady().then(async () => {
     Menu.setApplicationMenu(null);
-    // Screen recording: Electron has no built-in picker, so the recorder gets the main screen.
+    // The screen or window chosen in the page (see listSources), or the main screen. On Windows the
+    // computer's sound is recorded too.
     session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
       desktopCapturer
-        .getSources({ types: ['screen'] })
-        .then(([screen]) => callback(screen ? { video: screen } : {}))
+        .getSources({ types: ['screen', 'window'] })
+        .then((sources) => {
+          const source = sources.find((s) => s.id === chosenSource) || sources.find((s) => s.id.startsWith('screen:'));
+          chosenSource = null;
+          callback(source ? { video: source, ...(process.platform === 'win32' && { audio: 'loopback' }) } : {});
+        })
         .catch(() => callback({}));
     });
     const tools = await downloadTools();

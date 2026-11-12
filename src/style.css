@@ -919,3 +919,34 @@ footer.site a:hover strong {
 .thumb figcaption + figcaption {
   justify-content: center;
 }
+
+.source-picker {
+  display: grid;
+  gap: 10px;
+}
+
+.thumb.source {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: center;
+  cursor: pointer;
+}
+
+.thumb.source:hover {
+  border-color: var(--accent);
+}
+
+.thumb.source img {
+  width: 100%;
+  border-radius: 4px;
+}
+
+.thumb.source span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
