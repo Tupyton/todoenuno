@@ -1,6 +1,7 @@
-# Builds the Windows app when a version tag (v1.2.3) is pushed and publishes it as a GitHub release.
-# The file names stay the same in every version: the site links to releases/latest/download/<name>.
-name: Versión para Windows
+# Builds the Windows and Android apps when a version tag (v1.2.3) is pushed and publishes them as a
+# GitHub release. The file names stay the same in every version: the site and the apps' update notices
+# link to releases/latest/download/<name>.
+name: Versión para Windows y Android
 
 on:
   push:
@@ -31,16 +32,77 @@ jobs:
       - name: Compilar instalador y portable
         run: npx electron-builder --win --x64 --publish never
 
-      - name: Publicar la versión
+      - name: Preparar los archivos
         shell: bash
+        run: |
+          # electron-builder gives the MSI's name to the ZIP too, so the MSI is named here instead.
+          mkdir salida
+          mv release/*.msi salida/TodoEnUno-Instalador.msi
+          mv release/TodoEnUno-Portable.exe release/TodoEnUno-*-win.zip salida/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: salida/
+          retention-days: 1
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - run: npm ci
+
+      - name: Compilar el sitio para la app
+        run: npm run android
+
+      - name: Compilar el APK firmado
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # Without the key the APK could not update an installed copy, so the release must not go out.
+          test -n "$KEYSTORE_BASE64" || { echo "Faltan los secretos de la clave de firma de Android."; exit 1; }
+          export ANDROID_KEYSTORE="$RUNNER_TEMP/todoenuno.jks"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$ANDROID_KEYSTORE"
+          cd android && ./gradlew assembleRelease
+          mkdir -p ../salida && mv app/build/outputs/apk/release/app-release.apk ../salida/TodoEnUno.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: salida/
+          retention-days: 1
+
+  publish:
+    needs: [windows, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: salida
+          merge-multiple: true
+
+      - name: Publicar la versión
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # electron-builder gives the MSI's name to the ZIP too, so the MSI is named here instead.
-          mv release/*.msi release/TodoEnUno-Instalador.msi
-          gh release create "$GITHUB_REF_NAME" \
-            release/TodoEnUno-Instalador.msi \
-            release/TodoEnUno-Portable.exe \
-            release/TodoEnUno-*-win.zip \
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            salida/TodoEnUno-Instalador.msi \
+            salida/TodoEnUno-Portable.exe \
+            salida/TodoEnUno-*-win.zip \
+            salida/TodoEnUno.apk \
             --title "TodoEnUno ${GITHUB_REF_NAME#v}" \
-            --notes "Descarga **TodoEnUno-Instalador.msi** para instalar la app, o **TodoEnUno-Portable.exe** para usarla sin instalar."
+            --notes "Windows: **TodoEnUno-Instalador.msi** para instalar la app, o **TodoEnUno-Portable.exe** para usarla sin instalar. Android: **TodoEnUno.apk** (teléfonos de 64 bits; hay que permitir instalar apps de este origen)."

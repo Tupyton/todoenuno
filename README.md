@@ -6,6 +6,7 @@ Más de 90 herramientas de imagen, PDF, documentos, video, audio y texto en una 
 - Versión para Windows:
   - [TodoEnUno-Instalador.msi](https://github.com/Tupyton/todoenuno/releases/latest/download/TodoEnUno-Instalador.msi): instalador de Windows (MSI), con accesos directos y desinstalación desde Windows.
   - [TodoEnUno-Portable.exe](https://github.com/Tupyton/todoenuno/releases/latest/download/TodoEnUno-Portable.exe): se abre sin instalar.
+- Versión para Android: [TodoEnUno.apk](https://github.com/Tupyton/todoenuno/releases/latest/download/TodoEnUno.apk), para teléfonos de 64 bits. Funciona sin conexión, guarda los resultados en `Documentos/TodoEnUno`, descarga video y audio con yt-dlp (en `Descargas/TodoEnUno`), convierte texto en voz con las voces del teléfono y avisa cuando hay una versión nueva.
 
 La versión para Windows añade lo que un navegador no puede hacer por sí solo:
 
@@ -33,17 +34,19 @@ npm run dev
 | `npm run downloader` | Servidor local de descargas para usar con el sitio en `localhost` (necesita `yt-dlp` y `ffmpeg`) |
 | `npm run desktop` | Abre la app de escritorio desde el código |
 | `npm run desktop:win` | Compila el instalador MSI y el `.exe` portable para Windows en `release/` |
+| `npm run android` | Prepara la app de Android en `android/` (luego `./gradlew assembleDebug` dentro de `android/`) |
 
 ## Estructura
 
 - `src/` — la app web: cada herramienta se declara en `src/tools/`.
 - `electron/` — proceso principal de la app de escritorio.
+- `android/` — app de Android (Capacitor), con los plugins nativos de descargas y voz.
 - `server/` — descargas con `yt-dlp`.
 - `scripts/` — preparación de FFmpeg, libarchive y de los programas que acompañan al `.exe`.
 
 ## Tecnologías
 
-JavaScript, Vite, FFmpeg (WebAssembly y nativo), pdf-lib, pdf.js, qpdf, SheetJS, libarchive, Electron, whisper.cpp, Real-ESRGAN, ONNX Runtime, Ghostscript.
+JavaScript, Vite, FFmpeg (WebAssembly y nativo), pdf-lib, pdf.js, qpdf, SheetJS, libarchive, Electron, Capacitor, youtubedl-android, whisper.cpp, Real-ESRGAN, ONNX Runtime, Ghostscript.
 
 ## Autor
 
