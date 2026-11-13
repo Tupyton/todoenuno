@@ -4,7 +4,7 @@
 import { spawn } from 'node:child_process';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { availableParallelism, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
@@ -55,22 +55,37 @@ function ffmpegJob(params, input) {
 /** Seconds in an FFmpeg time such as 01:02:03.45. */
 const seconds = (text) => text.split(':').reduce((total, part) => total * 60 + Number(part), 0);
 
+/** Reads FFmpeg's status lines into a progress from 0 to 1. */
+function ffmpegProgress(onProgress) {
+  let log = '';
+  let duration = 0;
+  return (text) => {
+    log = (log + text).slice(-4000);
+    duration ||= seconds(/Duration: (\d+:\d+:[\d.]+)/.exec(log)?.[1] || '0');
+    const at = [...text.matchAll(/time=(\d+:\d+:[\d.]+)/g)].at(-1);
+    if (at && duration) onProgress(Math.min(1, seconds(at[1]) / duration));
+  };
+}
+
+/** Reads the last "NN%" a program printed into a progress from 0 to 1. */
+const percentProgress = (pattern, onProgress) => (text) => {
+  const at = [...text.matchAll(pattern)].at(-1);
+  if (at) onProgress(Math.min(1, Number(at[1]) / 100));
+};
+
 /**
- * Runs a program inside `cwd`. Closing the request `res` belongs to cancels it. `onProgress` gets
- * values from 0 to 1 read from FFmpeg's own status lines.
+ * Runs a program inside `cwd`. Closing the request `res` belongs to cancels it. `watch` gets what the
+ * program prints, to follow its progress.
  */
-function run(command, args, cwd, res, onProgress) {
+function run(command, args, cwd, res, watch) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
+    const child = spawn(command, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     let stderr = '';
-    let duration = 0;
+    const read = (chunk) => watch?.(String(chunk));
+    child.stdout.on('data', read);
     child.stderr.on('data', (chunk) => {
-      const text = String(chunk);
-      stderr = (stderr + text).slice(-4000);
-      if (!onProgress) return;
-      duration ||= seconds(/Duration: (\d+:\d+:[\d.]+)/.exec(stderr)?.[1] || '0');
-      const at = [...text.matchAll(/time=(\d+:\d+:[\d.]+)/g)].at(-1);
-      if (at && duration) onProgress(Math.min(1, seconds(at[1]) / duration));
+      stderr = (stderr + chunk).slice(-4000);
+      read(chunk);
     });
     // Closing the tool page cancels the work.
     const cancel = () => child.kill();
@@ -240,17 +255,17 @@ async function commandJob(ffmpeg, req, res, url) {
     const dir = await job.dir;
     const inputs = new Set(await readdir(dir));
     if (args.some((arg, i) => args[i - 1] === '-i' && !inputs.has(arg))) return refuse('Falta un archivo de entrada.');
-    const onProgress = (p) => (job.progress = p);
+    const watch = () => ffmpegProgress((p) => (job.progress = p));
     const encoder = await findGpu(ffmpeg);
     const fast = encoder && withGpu(args, encoder);
     const full = (a) => ['-hide_banner', '-y', ...a, output];
     try {
-      await run(ffmpeg, full(fast || args), dir, res, onProgress);
+      await run(ffmpeg, full(fast || args), dir, res, watch());
     } catch (error) {
       // Some videos or drivers do not get along with the graphics card; the regular encoder always works.
       if (!fast || res.destroyed) throw error;
       job.progress = 0;
-      await run(ffmpeg, full(args), dir, res, onProgress);
+      await run(ffmpeg, full(args), dir, res, watch());
     }
     await sendFile(res, join(dir, output), 'application/octet-stream');
     await dropJob(id);
@@ -263,6 +278,109 @@ async function commandJob(ffmpeg, req, res, url) {
 /** POST /api/ffmpeg?job=… for named jobs, /api/ffmpeg/{input,run,progress}?id=… for page commands. */
 export function createFFmpegHandler(ffmpeg) {
   return (req, res, url) => (url.pathname === '/api/ffmpeg' ? namedJob(ffmpeg, req, res, url) : commandJob(ffmpeg, req, res, url));
+}
+
+/*
+ * Tools that use an optional component (see components.js): transcription with whisper.cpp, bigger
+ * pictures with Real-ESRGAN and PDF compression with Ghostscript. The request body is the input file.
+ * Progress is kept per page-chosen id and read with POST /api/progress?id=….
+ */
+const LANGUAGES = new Set(['auto', 'es', 'en', 'pt', 'fr', 'de', 'it']);
+const TEXT_TYPES = { srt: 'application/x-subrip; charset=utf-8', vtt: 'text/vtt; charset=utf-8', txt: 'text/plain; charset=utf-8' };
+const PDF_PRESETS = new Set(['screen', 'ebook', 'printer']);
+const exe = (name) => (process.platform === 'win32' ? `${name}.exe` : name);
+
+export function createComponentTools(components, ffmpeg) {
+  const progress = new Map();
+
+  /** Runs `work(dir, input, setProgress)` on the uploaded file in a folder of its own. */
+  async function job(req, res, url, inputExt, work) {
+    const id = url.searchParams.get('id');
+    if (!ID.test(id || '')) return fail(res, 400, 'Trabajo no válido.');
+    if (!/^[a-z0-9]{1,5}$/i.test(inputExt || '')) return fail(res, 400, 'Archivo no válido.');
+    const dir = await mkdtemp(join(tmpdir(), 'todoenuno-'));
+    progress.set(id, 0);
+    try {
+      const input = `input.${inputExt.toLowerCase()}`;
+      await pipeline(req, createWriteStream(join(dir, input)));
+      const [output, type] = await work(dir, input, (p) => progress.set(id, p));
+      await sendFile(res, join(dir, output), type);
+    } catch (error) {
+      fail(res, 500, error.message);
+    } finally {
+      progress.delete(id);
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
+  const transcribe = (req, res, url) => {
+    const p = url.searchParams;
+    const model = p.get('model');
+    const language = p.get('lang');
+    const format = p.get('format');
+    if (!['base', 'small'].includes(model) || !LANGUAGES.has(language) || !TEXT_TYPES[format]) return fail(res, 400, 'Opciones no válidas.');
+    return job(req, res, url, p.get('ext'), async (dir, input, setProgress) => {
+      await components.install('whisper');
+      await components.install(`whisper-${model}`);
+      // whisper.cpp reads 16 kHz mono WAV.
+      await run(ffmpeg, ['-hide_banner', '-y', '-i', input, '-vn', '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', 'audio.wav'], dir, res);
+      const args = ['-m', components.path(`whisper-${model}`), '-f', 'audio.wav', '-l', language, '-pp', `-o${format}`, '-of', 'texto'];
+      args.push('-t', String(Math.min(8, availableParallelism())));
+      await run(join(components.path('whisper'), exe('whisper-cli')), args, dir, res, percentProgress(/progress =\s*(\d+)%/g, setProgress));
+      return [`texto.${format}`, TEXT_TYPES[format]];
+    });
+  };
+
+  const upscale = (req, res, url) => {
+    const p = url.searchParams;
+    const scale = p.get('scale');
+    const model = { foto: 'realesrgan-x4plus', dibujo: 'realesrgan-x4plus-anime' }[p.get('model')];
+    if (!['2', '4'].includes(scale) || !model) return fail(res, 400, 'Opciones no válidas.');
+    return job(req, res, url, p.get('ext'), async (dir, input, setProgress) => {
+      await components.install('realesrgan');
+      const folder = components.path('realesrgan');
+      // Any picture FFmpeg reads becomes a PNG, which Real-ESRGAN always accepts.
+      await run(ffmpeg, ['-hide_banner', '-y', '-i', input, '-frames:v', '1', 'source.png'], dir, res);
+      const args = ['-i', 'source.png', '-o', 'x4.png', '-n', model, '-s', '4', '-m', join(folder, 'models')];
+      try {
+        await run(join(folder, exe('realesrgan-ncnn-vulkan')), args, dir, res, percentProgress(/([\d.]+)%/g, setProgress));
+      } catch (error) {
+        if (/vk|vulkan|gpu/i.test(error.message) || /3221225781|c0000135/i.test(error.message)) {
+          throw new Error('Esta herramienta necesita una tarjeta gráfica compatible con Vulkan. Actualiza el controlador de la tarjeta gráfica e inténtalo de nuevo.');
+        }
+        throw error;
+      }
+      // The models always enlarge four times; ×2 is the ×4 result halved, sharper than enlarging twice.
+      if (scale === '4') return ['x4.png', 'image/png'];
+      await run(ffmpeg, ['-hide_banner', '-y', '-i', 'x4.png', '-vf', 'scale=iw/2:ih/2:flags=lanczos', 'x2.png'], dir, res);
+      return ['x2.png', 'image/png'];
+    });
+  };
+
+  const compressPdf = (req, res, url) => {
+    const preset = url.searchParams.get('preset');
+    if (!PDF_PRESETS.has(preset)) return fail(res, 400, 'Opciones no válidas.');
+    return job(req, res, url, 'pdf', async (dir, input) => {
+      await components.install('ghostscript');
+      const gs = join(components.path('ghostscript'), process.platform === 'win32' ? 'gswin64c.exe' : 'gs');
+      const args = ['-sDEVICE=pdfwrite', '-dCompatibilityLevel=1.5', `-dPDFSETTINGS=/${preset}`, '-dNOPAUSE', '-dBATCH', '-dSAFER', '-dQUIET'];
+      await run(gs, [...args, '-sOutputFile=salida.pdf', input], dir, res);
+      // Some PDFs are already as small as they get: then the original is the better result.
+      const smaller = (await stat(join(dir, 'salida.pdf'))).size < (await stat(join(dir, input))).size;
+      return [smaller ? 'salida.pdf' : input, 'application/pdf'];
+    });
+  };
+
+  return (req, res, url) => {
+    if (url.pathname === '/api/progress') {
+      const value = progress.get(url.searchParams.get('id')) || 0;
+      return res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ progress: value }));
+    }
+    if (url.pathname === '/api/transcribe') return transcribe(req, res, url);
+    if (url.pathname === '/api/upscale') return upscale(req, res, url);
+    if (url.pathname === '/api/pdf-compress') return compressPdf(req, res, url);
+    return fail(res, 404, 'No encontrado.');
+  };
 }
 
 /* Text to speech with System.Speech, which every Windows has. */

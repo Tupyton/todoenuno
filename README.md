@@ -7,7 +7,15 @@ Más de 90 herramientas de imagen, PDF, documentos, video, audio y texto en una 
   - [TodoEnUno-Instalador.msi](https://github.com/Tupyton/todoenuno/releases/latest/download/TodoEnUno-Instalador.msi): instalador de Windows (MSI), con accesos directos y desinstalación desde Windows.
   - [TodoEnUno-Portable.exe](https://github.com/Tupyton/todoenuno/releases/latest/download/TodoEnUno-Portable.exe): se abre sin instalar.
 
-La versión para Windows incluye además el descargador de video y audio, que un navegador no puede ofrecer por sí solo, y avisa al abrirse cuando hay una versión nueva.
+La versión para Windows añade lo que un navegador no puede hacer por sí solo:
+
+- Descargador de video y audio (yt-dlp).
+- FFmpeg nativo en todas las herramientas de video y audio, con la tarjeta gráfica cuando la hay y sin límite de tamaño.
+- Grabar una pantalla o ventana concreta, con el sonido del equipo.
+- Transcribir audio o video a texto o subtítulos (whisper.cpp), aumentar la resolución de imágenes (Real-ESRGAN), quitar el fondo (ONNX Runtime) y comprimir PDF conservando el texto (Ghostscript). Estos programas y modelos no vienen en el instalador: la app descarga cada uno la primera vez que se usa, desde el release `componentes`, y comprueba su SHA-256.
+- Aviso al abrirse cuando hay una versión nueva.
+
+En los navegadores basados en Chromium y en la app, las herramientas pueden procesar todos los archivos de una carpeta.
 
 ## Desarrollo
 
@@ -24,7 +32,7 @@ npm run dev
 | `npm run build` | Compila el sitio en `dist/` |
 | `npm run downloader` | Servidor local de descargas para usar con el sitio en `localhost` (necesita `yt-dlp` y `ffmpeg`) |
 | `npm run desktop` | Abre la app de escritorio desde el código |
-| `npm run desktop:win` | Compila el instalador y el `.exe` portable para Windows en `release/` |
+| `npm run desktop:win` | Compila el instalador MSI y el `.exe` portable para Windows en `release/` |
 
 ## Estructura
 
@@ -35,7 +43,7 @@ npm run dev
 
 ## Tecnologías
 
-JavaScript, Vite, FFmpeg (WebAssembly), pdf-lib, pdf.js, qpdf, SheetJS, libarchive, Electron.
+JavaScript, Vite, FFmpeg (WebAssembly y nativo), pdf-lib, pdf.js, qpdf, SheetJS, libarchive, Electron, whisper.cpp, Real-ESRGAN, ONNX Runtime, Ghostscript.
 
 ## Autor
 

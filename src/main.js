@@ -26,7 +26,7 @@ function card(tool) {
       'a',
       { class: blocked ? 'card blocked' : 'card', href: `#/${tool.id}`, 'data-cat': tool.cat },
       tile(blocked ? lockIcon() : toolIcon(tool)),
-      h('span', { class: 'card-text' }, h('strong', {}, tool.name), h('span', {}, blocked ? (tool.desktopOnly ? 'Solo en la versión para Windows (.exe).' : 'No disponible en este dispositivo.') : tool.desc)),
+      h('span', { class: 'card-text' }, h('strong', {}, tool.name), h('span', {}, blocked ? (tool.desktopOnly ? 'Solo en la versión para Windows.' : 'No disponible en este dispositivo.') : tool.desc)),
     ),
   };
 }

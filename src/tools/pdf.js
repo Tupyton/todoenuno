@@ -1,5 +1,7 @@
 import { encode, loadImage, drawn } from '../lib/image.js';
 import { eachPage, open, parseRanges, pdfLib, renderPage, save, subset } from '../lib/pdf.js';
+import { DESKTOP } from '../env.js';
+import { componentJob, ensureComponents, renamed } from '../lib/components.js';
 import { base } from '../ui.js';
 
 const ONE = { accept: 'application/pdf,.pdf' };
@@ -148,6 +150,13 @@ async function extractText({ file, progress }) {
   return text;
 }
 
+/** Desktop app: Ghostscript rewrites the PDF with smaller images and keeps its text. */
+async function compressWithGhostscript({ file, v, progress }) {
+  await ensureComponents(['ghostscript'], progress);
+  const blob = await componentJob('/api/pdf-compress', { preset: v.preset }, file);
+  return { blob: new Blob([blob], { type: 'application/pdf' }), name: renamed(file, 'comprimido', 'pdf') };
+}
+
 async function compress({ file, v, progress }) {
   const { PDFDocument } = await pdfLib();
   const doc = await PDFDocument.create();
@@ -258,28 +267,50 @@ export default [
     ],
     run: pdfToImages,
   }),
-  pdf({
-    id: 'pdf-comprimir',
-    name: 'Comprimir PDF',
-    desc: 'Reduce el peso convirtiendo las páginas en imágenes.',
-    action: 'Comprimir',
-    note: 'Las páginas pasan a ser imágenes: el texto deja de ser seleccionable. Funciona mejor con escaneos.',
-    fields: [
-      { key: 'quality', label: 'Calidad', type: 'range', min: 10, max: 95, value: 60 },
-      {
-        key: 'scale',
-        label: 'Resolución',
-        type: 'select',
-        value: '1.5',
-        options: [
-          ['1', 'Baja (72 ppp)'],
-          ['1.5', 'Media (108 ppp)'],
-          ['2', 'Alta (144 ppp)'],
+  DESKTOP
+    ? pdf({
+        id: 'pdf-comprimir',
+        name: 'Comprimir PDF',
+        desc: 'Reduce el peso de un PDF sin perder el texto.',
+        action: 'Comprimir',
+        note: 'Usa Ghostscript: recomprime las imágenes y conserva el texto seleccionable. La primera vez descarga 14 MB.',
+        fields: [
+          {
+            key: 'preset',
+            label: 'Calidad',
+            type: 'select',
+            value: 'ebook',
+            options: [
+              ['screen', 'Baja: lo más ligero (72 ppp)'],
+              ['ebook', 'Media: para pantalla y correo (150 ppp)'],
+              ['printer', 'Alta: para imprimir (300 ppp)'],
+            ],
+          },
         ],
-      },
-    ],
-    run: compress,
-  }),
+        run: compressWithGhostscript,
+      })
+    : pdf({
+        id: 'pdf-comprimir',
+        name: 'Comprimir PDF',
+        desc: 'Reduce el peso convirtiendo las páginas en imágenes.',
+        action: 'Comprimir',
+        note: 'Las páginas pasan a ser imágenes: el texto deja de ser seleccionable. Funciona mejor con escaneos.',
+        fields: [
+          { key: 'quality', label: 'Calidad', type: 'range', min: 10, max: 95, value: 60 },
+          {
+            key: 'scale',
+            label: 'Resolución',
+            type: 'select',
+            value: '1.5',
+            options: [
+              ['1', 'Baja (72 ppp)'],
+              ['1.5', 'Media (108 ppp)'],
+              ['2', 'Alta (144 ppp)'],
+            ],
+          },
+        ],
+        run: compress,
+      }),
   pdf({
     id: 'pdf-numerar',
     name: 'Numerar páginas',

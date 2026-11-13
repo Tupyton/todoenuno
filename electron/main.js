@@ -8,7 +8,8 @@ import { createServer } from 'node:http';
 import { extname, join, normalize, sep } from 'node:path';
 import { createBrotliDecompress } from 'node:zlib';
 import { createDownloadHandler } from '../server/downloader.js';
-import { createFFmpegHandler, handleSpeech } from './native.js';
+import { createComponents } from './components.js';
+import { createComponentTools, createFFmpegHandler, handleSpeech } from './native.js';
 
 // A fixed port keeps the page's address the same on every start, and with it the saved
 // favourites, recent tools and theme. If something else has it, any free port will do for this run.
@@ -80,7 +81,7 @@ function chooseSource(res, url) {
   res.writeHead(204).end();
 }
 
-function startServer({ download, ffmpeg }) {
+function startServer({ download, ffmpeg, components, componentTools }) {
   return new Promise((resolve, reject) => {
     const server = createServer((req, res) => {
       const { port } = server.address();
@@ -94,11 +95,14 @@ function startServer({ download, ffmpeg }) {
         if (url.pathname === '/api/download') return download(req, res);
         if (url.pathname === '/api/ffmpeg' || url.pathname.startsWith('/api/ffmpeg/')) return ffmpeg(req, res, url);
         if (url.pathname === '/api/tts' || url.pathname === '/api/voices') return handleSpeech(req, res, url);
+        if (url.pathname.startsWith('/api/components/')) return components.handle(req, res, url);
+        if (['/api/transcribe', '/api/upscale', '/api/pdf-compress', '/api/progress'].includes(url.pathname)) return componentTools(req, res, url);
         if (url.pathname === '/api/sources') return listSources(res);
         if (url.pathname === '/api/sources/choose') return chooseSource(res, url);
         return res.writeHead(404).end();
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') return res.writeHead(405).end();
+      if (url.pathname.startsWith('/components/')) return components.serve(url, res);
       sendFile(url, res);
     });
     server.once('error', (error) => {
@@ -205,6 +209,14 @@ else {
     });
     const tools = await downloadTools();
     const ffmpeg = tools.ffmpegLocation ? join(tools.ffmpegLocation, 'ffmpeg.exe') : 'ffmpeg';
-    openWindow(await startServer({ download: createDownloadHandler(tools), ffmpeg: createFFmpegHandler(ffmpeg) }));
+    const components = createComponents(join(app.getPath('userData'), 'componentes'));
+    openWindow(
+      await startServer({
+        download: createDownloadHandler(tools),
+        ffmpeg: createFFmpegHandler(ffmpeg),
+        components,
+        componentTools: createComponentTools(components, ffmpeg),
+      }),
+    );
   });
 }

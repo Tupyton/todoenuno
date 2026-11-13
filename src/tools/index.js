@@ -11,6 +11,7 @@ import office from './office.js';
 import speech from './speech.js';
 import fonts from './fonts.js';
 import scanner from './scanner.js';
+import extras from './extras.js';
 
 export const categories = [
   { id: 'descargas', name: 'Descargas' },
@@ -23,4 +24,4 @@ export const categories = [
   { id: 'utilidades', name: 'Utilidades' },
 ];
 
-export const tools = [...download, ...image, ...imageEditors, ...pdf, ...pdfEditors, ...office, ...scanner, ...media, ...mediaCompose, ...text, ...speech, ...utilities, ...fonts];
+export const tools = [...download, ...image, ...imageEditors, ...pdf, ...pdfEditors, ...office, ...scanner, ...media, ...mediaCompose, ...text, ...speech, ...utilities, ...fonts, ...extras];
