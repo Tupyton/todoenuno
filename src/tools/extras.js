@@ -1,4 +1,4 @@
-import { DESKTOP } from '../env.js';
+import { ANDROID, DESKTOP } from '../env.js';
 import { componentJob, ensureComponents, renamed } from '../lib/components.js';
 import { drawn, encode, loadImage, makeCanvas } from '../lib/image.js';
 import { base } from '../ui.js';
@@ -37,21 +37,44 @@ async function upscale({ file, v, progress }) {
 const SIDE = 320; // the model's input size
 let session;
 
-async function model() {
+// The Android app downloads the model through its own plugin (android/…/ComponentsPlugin.java), since
+// GitHub does not let the page fetch it; ONNX Runtime itself comes inside the APK.
+const SILUETA = { file: 'silueta.onnx', sha256: '75da6c8d2f8096ec743d071951be73b4a8bc7b3e51d9a6625d63644f90ffeedb' };
+let componentsPlugin;
+
+async function androidModel(progress) {
+  const { registerPlugin, Capacitor } = await import('@capacitor/core');
+  componentsPlugin ??= registerPlugin('Components');
+  const listener = await componentsPlugin.addListener('progress', (event) => progress(event.progress));
+  try {
+    const { path } = await componentsPlugin.get(SILUETA);
+    return Capacitor.convertFileSrc(`file://${path}`);
+  } finally {
+    listener.remove();
+  }
+}
+
+/** Where the model is, after downloading it if needed. */
+async function modelUrl(progress) {
+  if (ANDROID) return androidModel(progress);
+  await ensureComponents(['ort', 'silueta'], progress);
+  return '/components/silueta.onnx';
+}
+
+async function model(url) {
   // Served by the app from the downloaded component, so the address is only known at run time.
   const folder = new URL('/components/ort/', location.href).href;
   const ort = await import(/* @vite-ignore */ `${folder}ort.wasm.min.mjs`);
   ort.env.wasm.wasmPaths = folder;
   // One thread needs no cross-origin isolation, which this local page does not have.
   ort.env.wasm.numThreads = 1;
-  session ??= await ort.InferenceSession.create('/components/silueta.onnx');
+  session ??= await ort.InferenceSession.create(url);
   return { ort, session };
 }
 
 async function removeBackground({ file, progress }) {
   const [downloading, working] = halves(progress);
-  await ensureComponents(['ort', 'silueta'], downloading);
-  const { ort, session: s } = await model();
+  const { ort, session: s } = await model(await modelUrl(downloading));
   working(0.2);
   const img = await loadImage(file);
   const pixels = drawn(img, SIDE, SIDE).getContext('2d').getImageData(0, 0, SIDE, SIDE).data;
@@ -170,14 +193,20 @@ export default [
     action: 'Aumentar',
     run: upscale,
   }),
-  desktopTool({
+  {
+    // Also in the Android app, where it runs on the phone's processor.
+    desktopOnly: true,
+    alsoAndroid: true,
+    blocked: () => !DESKTOP && !ANDROID && 'Esta herramienta solo está en las versiones para Windows y Android: necesita un modelo que se descarga aparte.',
     id: 'imagen-quitar-fondo',
     name: 'Quitar fondo',
     desc: 'Deja solo a la persona u objeto principal, con fondo transparente.',
     cat: 'imagen',
     files: { accept: 'image/*' },
-    note: 'Funciona sin conexión. La primera vez descarga 48 MB. El resultado es un PNG transparente.',
+    note: ANDROID
+      ? 'Usa bastante batería y procesador durante unos segundos por imagen; mejor con el teléfono cargado. La primera vez descarga 44 MB; después funciona sin conexión. El resultado es un PNG transparente.'
+      : 'Funciona sin conexión. La primera vez descarga 48 MB. El resultado es un PNG transparente.',
     action: 'Quitar fondo',
     run: removeBackground,
-  }),
+  },
 ];

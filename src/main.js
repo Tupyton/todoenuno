@@ -26,7 +26,7 @@ function card(tool) {
       'a',
       { class: blocked ? 'card blocked' : 'card', href: `#/${tool.id}`, 'data-cat': tool.cat },
       tile(blocked ? lockIcon() : toolIcon(tool)),
-      h('span', { class: 'card-text' }, h('strong', {}, tool.name), h('span', {}, blocked ? (tool.desktopOnly ? 'Solo en la versión para Windows.' : 'No disponible en este dispositivo.') : tool.desc)),
+      h('span', { class: 'card-text' }, h('strong', {}, tool.name), h('span', {}, blocked ? (tool.desktopOnly ? (tool.alsoAndroid ? 'Solo en las apps para Windows y Android.' : 'Solo en la versión para Windows.') : 'No disponible en este dispositivo.') : tool.desc)),
     ),
   };
 }
@@ -120,9 +120,9 @@ const windowsDownload = () =>
   h(
     'p',
     { class: 'get-app' },
-    h('a', { class: 'btn primary', href: WINDOWS_DOWNLOAD }, 'Descargar TodoEnUno para Windows'),
-    WINDOWS_PORTABLE && h('a', { class: 'portable', href: WINDOWS_PORTABLE }, 'versión portable, sin instalar'),
-    ANDROID_DOWNLOAD && h('a', { class: 'portable', href: ANDROID_DOWNLOAD }, 'app para Android'),
+    h('a', { class: 'btn primary', href: WINDOWS_DOWNLOAD }, 'Descargar para Windows'),
+    ANDROID_DOWNLOAD && h('a', { class: 'btn primary', href: ANDROID_DOWNLOAD }, 'Descargar para Android'),
+    WINDOWS_PORTABLE && h('a', { class: 'portable', href: WINDOWS_PORTABLE }, 'o Windows portable, sin instalar'),
   );
 
 function favoriteButton(tool) {

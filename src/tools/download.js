@@ -65,6 +65,7 @@ export default [
     // The published site cannot rely on a server on the visitor's machine, and a phone cannot run one.
     // Its lock card says where the tool does work instead of the generic text.
     desktopOnly: true,
+    alsoAndroid: true,
     blocked: () =>
       !DESKTOP &&
       !ANDROID &&

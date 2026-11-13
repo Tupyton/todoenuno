@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
         // The app's own plugins are registered before the page loads.
         registerPlugin(DownloaderPlugin.class);
         registerPlugin(SpeechPlugin.class);
+        registerPlugin(ComponentsPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
