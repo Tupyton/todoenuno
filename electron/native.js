@@ -202,7 +202,8 @@ function findGpu(ffmpeg) {
 function withGpu(args, [, settings, pixelFormat]) {
   const at = args.findIndex((arg, i) => arg === 'libx264' && args[i - 1] === '-c:v');
   if (at < 0) return null;
-  const crf = args[args.indexOf('-crf') + 1] || '23';
+  const crfAt = args.indexOf('-crf');
+  const crf = crfAt >= 0 ? args[crfAt + 1] : '23';
   const out = [];
   for (let i = 0; i < args.length; i++) {
     if (i === at - 1) {
