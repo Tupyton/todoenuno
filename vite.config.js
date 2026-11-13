@@ -81,7 +81,11 @@ self.addEventListener('fetch', (event) => {
   };
 }
 
+const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
+
 export default defineConfig({
+  // The app's version, which the Android app compares with the latest release.
+  define: { __APP_VERSION__: JSON.stringify(version) },
   // @ffmpeg/ffmpeg starts its own module worker; pre-bundling breaks that worker's URL.
   optimizeDeps: { exclude: ['@ffmpeg/ffmpeg'] },
   // The worker loads the ESM build of ffmpeg-core with a dynamic import.

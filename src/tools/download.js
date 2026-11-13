@@ -12,9 +12,10 @@ const OFFLINE = DESKTOP
  * Android app: yt-dlp runs on the phone (android/…/DownloaderPlugin.java) and saves the file to
  * Download/TodoEnUno itself, so the result is only a message saying where it went.
  */
+let downloaderPlugin;
 async function downloadOnPhone(url, v, progress) {
-  const { registerPlugin } = await import('@capacitor/core');
-  const downloader = registerPlugin('Downloader');
+  downloaderPlugin ??= (await import('@capacitor/core')).registerPlugin('Downloader');
+  const downloader = downloaderPlugin;
   const listener = await downloader.addListener('progress', (event) => progress(event.progress));
   try {
     const { location: saved } = await downloader.download({ url: url.href, kind: v.kind, quality: v.quality });

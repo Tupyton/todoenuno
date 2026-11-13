@@ -1,5 +1,5 @@
 import './style.css';
-import { ANDROID, DESKTOP, WINDOWS_DOWNLOAD, WINDOWS_PORTABLE } from './env.js';
+import { ANDROID, ANDROID_DOWNLOAD, APP_VERSION, DESKTOP, WINDOWS_DOWNLOAD, WINDOWS_PORTABLE } from './env.js';
 import { categoryIcon, lockIcon, toolIcon, uiIcon } from './icons.js';
 import { addRecent, favorites, recents, saveTheme, toggleFavorite } from './store.js';
 import { tools, categories } from './tools/index.js';
@@ -121,7 +121,8 @@ const windowsDownload = () =>
     'p',
     { class: 'get-app' },
     h('a', { class: 'btn primary', href: WINDOWS_DOWNLOAD }, 'Descargar TodoEnUno para Windows'),
-    WINDOWS_PORTABLE && h('a', { class: 'portable', href: WINDOWS_PORTABLE }, 'o la versión portable, sin instalar'),
+    WINDOWS_PORTABLE && h('a', { class: 'portable', href: WINDOWS_PORTABLE }, 'versión portable, sin instalar'),
+    ANDROID_DOWNLOAD && h('a', { class: 'portable', href: ANDROID_DOWNLOAD }, 'app para Android'),
   );
 
 function favoriteButton(tool) {
@@ -165,7 +166,7 @@ function route() {
   const blocked = tool.blocked?.();
   if (blocked) {
     body.append(h('p', { class: 'status error' }, blocked));
-    if (tool.desktopOnly && WINDOWS_DOWNLOAD) body.append(windowsDownload());
+    if (tool.desktopOnly && !ANDROID && WINDOWS_DOWNLOAD) body.append(windowsDownload());
   }
   else {
     addRecent(tool.id);
@@ -187,9 +188,43 @@ function themeToggle() {
   paint();
 }
 
+/** True when version `a` ("1.2.3", with or without a leading "v") is newer than `b`. */
+function isNewer(a, b) {
+  const parts = (v) => v.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  }
+  return false;
+}
+
+/**
+ * Android app: a bar at the top when a newer version is published on GitHub (the Windows app does
+ * the same with a dialog, see electron/main.js). Offline or with GitHub unavailable it says nothing.
+ */
+async function checkForUpdate() {
+  try {
+    const response = await fetch('https://api.github.com/repos/Tupyton/todoenuno/releases/latest');
+    if (!response.ok) return;
+    const { tag_name: latest } = await response.json();
+    if (!latest || !isNewer(latest, APP_VERSION)) return;
+    const bar = h(
+      'div',
+      { class: 'update-bar', role: 'status' },
+      h('span', {}, `Hay una nueva versión (${latest.replace(/^v/, '')}).`),
+      h('a', { class: 'btn primary', href: ANDROID_DOWNLOAD, target: '_blank', rel: 'noopener' }, 'Descargar'),
+      h('button', { type: 'button', class: 'icon', title: 'Cerrar', 'aria-label': 'Cerrar', onclick: () => bar.remove() }, '✕'),
+    );
+    document.body.prepend(bar);
+  } catch {
+    // Try again on the next start.
+  }
+}
+
 themeToggle();
 window.addEventListener('hashchange', route);
 route();
+if (ANDROID) checkForUpdate();
 
 // Installable and usable offline. Only in the built site: a worker would cache stale modules during development.
 // Not in the desktop app, where the files are already on the computer.

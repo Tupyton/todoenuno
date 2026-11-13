@@ -8,3 +8,8 @@ export const ANDROID = !!window.Capacitor?.isNativePlatform?.();
 export const WINDOWS_DOWNLOAD = 'https://github.com/Tupyton/todoenuno/releases/latest/download/TodoEnUno-Instalador.msi';
 /** The same version as a single .exe that runs without installing. */
 export const WINDOWS_PORTABLE = 'https://github.com/Tupyton/todoenuno/releases/latest/download/TodoEnUno-Portable.exe';
+/** The Android app, a single APK installed by hand (it is not in any store). */
+export const ANDROID_DOWNLOAD = 'https://github.com/Tupyton/todoenuno/releases/latest/download/TodoEnUno.apk';
+
+/** This build's version (package.json). */
+export const APP_VERSION = __APP_VERSION__;
