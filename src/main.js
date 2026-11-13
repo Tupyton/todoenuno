@@ -1,5 +1,5 @@
 import './style.css';
-import { DESKTOP, WINDOWS_DOWNLOAD, WINDOWS_PORTABLE } from './env.js';
+import { ANDROID, DESKTOP, WINDOWS_DOWNLOAD, WINDOWS_PORTABLE } from './env.js';
 import { categoryIcon, lockIcon, toolIcon, uiIcon } from './icons.js';
 import { addRecent, favorites, recents, saveTheme, toggleFavorite } from './store.js';
 import { tools, categories } from './tools/index.js';
@@ -109,7 +109,7 @@ function home() {
       h('p', {}, 'Imágenes, PDF, video, audio y texto. Gratis y privado: los archivos no salen de tu equipo.'),
       search,
       chips,
-      !DESKTOP && WINDOWS_DOWNLOAD && windowsDownload(),
+      !DESKTOP && !ANDROID && WINDOWS_DOWNLOAD && windowsDownload(),
     ),
     ...sections.map((s) => s.el),
     empty,
@@ -193,4 +193,4 @@ route();
 
 // Installable and usable offline. Only in the built site: a worker would cache stale modules during development.
 // Not in the desktop app, where the files are already on the computer.
-if (import.meta.env.PROD && !DESKTOP && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+if (import.meta.env.PROD && !DESKTOP && !ANDROID && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');

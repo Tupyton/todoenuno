@@ -4,3 +4,8 @@ public/ffmpeg
 public/libarchive
 release
 desktop/bin
+
+# Android: copy of dist for the app, and the signing key, which never goes in the repository
+www/
+*.jks
+*.keystore

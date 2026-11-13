@@ -12,9 +12,14 @@
     "prebuild": "node scripts/ffmpeg-core.mjs && node scripts/libarchive.mjs",
     "desktop": "npm run build && electron .",
     "desktop:binaries": "node scripts/desktop-binaries.mjs",
-    "desktop:win": "npm run build && npm run desktop:binaries && electron-builder --win --x64"
+    "desktop:win": "npm run build && npm run desktop:binaries && electron-builder --win --x64",
+    "android": "npm run build && node scripts/android-web.mjs && cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/share": "^8.0.3",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@neslinesli93/qpdf-wasm": "^0.3.1",
     "docx-preview": "^0.4.1",
@@ -31,6 +36,7 @@
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.2",
     "@ffmpeg/core": "^0.12.10",
     "electron": "^45.3.0",
     "electron-builder": "^26.18.0",

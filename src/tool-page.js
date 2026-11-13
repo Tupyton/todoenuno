@@ -1,3 +1,5 @@
+import { ANDROID } from './env.js';
+import { canShare, saveFile, shareFile } from './lib/platform.js';
 import { h, formatBytes, clamp, base } from './ui.js';
 
 function mediaEl(type, url) {
@@ -130,17 +132,38 @@ async function downloadZip(items) {
     seen.set(name, n + 1);
     zip.file(n ? name.replace(/(\.[^.]*)?$/, `-${n}$1`) : name, blob);
   }
-  const url = URL.createObjectURL(await zip.generateAsync({ type: 'blob' }));
-  h('a', { href: url, download: 'todoenuno.zip' }).click();
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return saveFile(await zip.generateAsync({ type: 'blob' }), 'todoenuno.zip');
 }
 
 /** Button for the system share sheet (phones mostly), or null where files cannot be shared. */
 function shareButton({ blob, name }) {
-  const file = new File([blob], name, { type: blob.type });
-  if (!navigator.canShare?.({ files: [file] })) return null;
-  // Closing the share sheet rejects the promise; that is not an error.
-  return h('button', { type: 'button', class: 'btn', onclick: () => navigator.share({ files: [file] }).catch(() => {}) }, 'Compartir');
+  if (!canShare(blob, name)) return null;
+  return h('button', { type: 'button', class: 'btn', onclick: () => shareFile(blob, name) }, 'Compartir');
+}
+
+/**
+ * The download control of a result: a plain link in browsers; in the Android app a button that saves
+ * the file and says where it went, since the WebView cannot follow blob: downloads.
+ */
+function saveControl({ blob, name }, url, note) {
+  if (!ANDROID) return h('a', { class: 'btn primary', href: url, download: name }, 'Descargar');
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'btn primary',
+      async onclick() {
+        try {
+          note.textContent = await saveFile(blob, name);
+          note.classList.remove('error');
+        } catch (error) {
+          note.textContent = `No se pudo guardar: ${error.message || error}`;
+          note.classList.add('error');
+        }
+      },
+    },
+    'Guardar',
+  );
 }
 
 const MAX_PREVIEWS = 12;
@@ -162,7 +185,12 @@ export function resultView() {
     const items = [result].flat();
     const blobs = items.filter((i) => i?.blob);
     if (blobs.length > 1) {
-      el.append(h('button', { type: 'button', class: 'btn', onclick: () => downloadZip(blobs) }, `Descargar todo (${blobs.length}) en ZIP`));
+      const note = h('p', { class: 'status', role: 'status' });
+      const all = async () => {
+        const message = await downloadZip(blobs).catch((error) => `No se pudo guardar: ${error.message || error}`);
+        if (message) note.textContent = message;
+      };
+      el.append(h('button', { type: 'button', class: 'btn', onclick: all }, `Descargar todo (${blobs.length}) en ZIP`), note);
     }
     for (const item of items) {
       if (typeof item === 'string') el.append(textResult(item));
@@ -170,6 +198,7 @@ export function resultView() {
       else {
         const url = URL.createObjectURL(item.blob);
         urls.push(url);
+        const note = h('p', { class: 'status', role: 'status' });
         el.append(
           h(
             'div',
@@ -181,8 +210,9 @@ export function resultView() {
               h('span', { class: 'fname' }, item.name),
               h('span', { class: 'muted' }, formatBytes(item.blob.size)),
               shareButton(item),
-              h('a', { class: 'btn primary', href: url, download: item.name }, 'Descargar'),
+              saveControl(item, url, note),
             ),
+            note,
           ),
         );
       }
@@ -335,6 +365,8 @@ export function renderTool(tool, root) {
   const folderButton =
     button &&
     zone &&
+    // The Android WebView has the function but no folder picker to show.
+    !ANDROID &&
     'showDirectoryPicker' in window &&
     h(
       'button',
