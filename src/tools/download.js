@@ -1,4 +1,5 @@
-import { DESKTOP } from '../env.js';
+import { ANDROID, DESKTOP } from '../env.js';
+import { h } from '../ui.js';
 
 // A browser cannot fetch video sites by itself: yt-dlp does it on this computer. The desktop app
 // answers on the page's own address; in a browser it is the local server in server/downloader.js.
@@ -7,13 +8,32 @@ const OFFLINE = DESKTOP
   ? 'No se pudo conectar con el descargador de la app. Cierra TodoEnUno y vuelve a abrirlo.'
   : 'No se encuentra el servidor de descargas. Inícialo en tu equipo con: npm run downloader';
 
-async function download({ v }) {
+/**
+ * Android app: yt-dlp runs on the phone (android/…/DownloaderPlugin.java) and saves the file to
+ * Download/TodoEnUno itself, so the result is only a message saying where it went.
+ */
+async function downloadOnPhone(url, v, progress) {
+  const { registerPlugin } = await import('@capacitor/core');
+  const downloader = registerPlugin('Downloader');
+  const listener = await downloader.addListener('progress', (event) => progress(event.progress));
+  try {
+    const { location: saved } = await downloader.download({ url: url.href, kind: v.kind, quality: v.quality });
+    return h('p', { class: 'note' }, `Guardado en ${saved}`);
+  } catch (error) {
+    throw new Error(error.message || String(error));
+  } finally {
+    listener.remove();
+  }
+}
+
+async function download({ v, progress }) {
   let url;
   try {
     url = new URL(v.url.trim());
   } catch {
     throw new Error('Pega una URL completa, por ejemplo https://…');
   }
+  if (ANDROID) return downloadOnPhone(url, v, progress);
   let response;
   try {
     response = await fetch(`${SERVER}/download`, {
@@ -38,7 +58,7 @@ export default [
   {
     id: 'descargar',
     name: 'Descargar video o audio',
-    desc: DESKTOP ? 'Descarga un video o su audio desde una URL.' : 'Descarga desde una URL con yt-dlp en tu equipo.',
+    desc: DESKTOP || ANDROID ? 'Descarga un video o su audio desde una URL.' : 'Descarga desde una URL con yt-dlp en tu equipo.',
     cat: 'descargas',
     action: 'Descargar',
     // The published site cannot rely on a server on the visitor's machine, and a phone cannot run one.
@@ -46,9 +66,12 @@ export default [
     desktopOnly: true,
     blocked: () =>
       !DESKTOP &&
+      !ANDROID &&
       !['localhost', '127.0.0.1'].includes(location.hostname) &&
-      'Solo en la versión para Windows (.exe) de TodoEnUno. Descargar de sitios de video necesita un programa en el equipo (yt-dlp); un navegador no puede hacerlo solo.',
-    note: DESKTOP
+      'Solo en las versiones para Windows y Android de TodoEnUno. Descargar de sitios de video necesita un programa en el equipo (yt-dlp); un navegador no puede hacerlo solo.',
+    note: ANDROID
+      ? 'Se guarda en Descargas/TodoEnUno. La primera descarga tarda un poco más mientras se prepara yt-dlp. Descarga solo contenido que tengas derecho a guardar.'
+      : DESKTOP
       ? 'Descarga solo contenido que tengas derecho a guardar.'
       : 'Requiere el servidor local (npm run downloader) con yt-dlp y ffmpeg instalados. Descarga solo contenido que tengas derecho a guardar.',
     fields: [
