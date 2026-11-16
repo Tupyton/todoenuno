@@ -71,8 +71,14 @@
   display: none !important;
 }
 
+/* The page never scrolls sideways: long names and URLs wrap (body) and anything still too wide is cut here. */
+html {
+  overflow-x: clip;
+}
+
 body {
   margin: 0;
+  overflow-wrap: anywhere;
   min-height: 100vh;
   display: flex;
   flex-direction: column;

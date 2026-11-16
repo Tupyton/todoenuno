@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(DownloaderPlugin.class);
         registerPlugin(SpeechPlugin.class);
         registerPlugin(ComponentsPlugin.class);
+        registerPlugin(ShareTargetPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

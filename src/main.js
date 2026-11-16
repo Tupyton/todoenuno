@@ -221,10 +221,28 @@ async function checkForUpdate() {
   }
 }
 
+/**
+ * Android app: a link shared from another app (TikTok, YouTube…) opens the downloader with the link
+ * filled in. Shared text often surrounds the link with a description, so only the first URL is kept.
+ */
+async function receiveShares() {
+  const { registerPlugin } = await import('@capacitor/core');
+  registerPlugin('ShareTarget').addListener('shared', ({ text }) => {
+    const url = text?.match(/https?:\/\/\S+/)?.[0];
+    if (!url) return;
+    tools.find((t) => t.id === 'descargar').fields.find((f) => f.key === 'url').value = url;
+    if (location.hash === '#/descargar') route();
+    else location.hash = '#/descargar';
+  });
+}
+
 themeToggle();
 window.addEventListener('hashchange', route);
 route();
-if (ANDROID) checkForUpdate();
+if (ANDROID) {
+  checkForUpdate();
+  receiveShares();
+}
 
 // Installable and usable offline. Only in the built site: a worker would cache stale modules during development.
 // Not in the desktop app, where the files are already on the computer.
