@@ -42,6 +42,8 @@ function serviceWorker() {
         join(dist, 'sw.js'),
         `const CACHE = ${JSON.stringify(cache)};
 const FFMPEG = 'todoenuno-ffmpeg-0.12.10';
+// Kept across deploys, like FFMPEG: the metadata engine (src/lib/exiftool.js) caches its wasm there.
+const EXIFTOOL = 'todoenuno-exiftool';
 const FILES = ${JSON.stringify(files)};
 
 self.addEventListener('install', (event) => {
@@ -52,7 +54,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE && key !== FFMPEG).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE && key !== FFMPEG && key !== EXIFTOOL).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
   );
 });

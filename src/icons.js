@@ -1,11 +1,11 @@
 import {
-  AppWindow, ArrowDownAZ, Binary, Braces, Camera, CaseSensitive, Clock, Columns2, Crop, Dices, Download, EyeOff,
+  AppWindow, Aperture, ArrowDownAZ, Binary, Braces, Camera, CaseSensitive, Clock, Columns2, Crop, Dices, Download, EyeOff,
   FileArchive, FileImage, FileText, Film, Fingerprint, FolderArchive, Gauge, Hash, Image, Images, History, KeyRound, Link, Lock, Moon, Star, Sun,
   ListOrdered, Merge, Minimize2, Music, PackageOpen, Palette, Pilcrow, QrCode, RefreshCw, RotateCw, Scaling, Scissors,
   ScreenShare, Sigma, SlidersHorizontal, Split, SquareRoundCorner, Stamp, Trash2, Type, Video, Volume2, VolumeX, Wrench,
   ArrowLeftRight, Captions, ClipboardList, FileCode, GitCompare, Grid3x3, LayoutGrid, Laugh, LockKeyhole, LockKeyholeOpen,
   FileOutput, FileSpreadsheet, FileType, Files, Presentation, Sheet,
-  Percent, Pipette, Regex, Ruler, ScanLine, ScanText, MessageSquareText, ImageUpscale, WandSparkles, Signature, Smartphone, Subtitles, Table, Timer,
+  Percent, Pipette, Regex, Ruler, ScanLine, ScanText, MessageSquareText, ImageUpscale, WandSparkles, Signature, Smartphone, Subtitles, Table, Tags, Timer,
   Repeat, Volume1, Maximize2, Vibrate, Rewind, Music2, AudioLines, Mic, Eraser, ImagePlus, FileCode2, AudioWaveform, CaseUpper,
   createElement,
 } from 'lucide';
@@ -23,6 +23,8 @@ const TOOL = {
   'imagen-esquinas': SquareRoundCorner,
   'imagen-unir': Columns2,
   'imagen-metadatos': EyeOff,
+  'imagen-info': Aperture,
+  'imagen-metadatos-editar': Tags,
   'imagen-favicons': AppWindow,
   'pdf-unir': Merge,
   'pdf-dividir': Split,

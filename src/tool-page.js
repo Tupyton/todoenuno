@@ -330,7 +330,8 @@ async function processFolder(tool, values, setStatus) {
 
 /**
  * Renders a declarative tool:
- * { files?: {accept, multiple, optional}, text?: true|{placeholder}, fields?, live?, action?, note?, run(ctx) }
+ * { files?: {accept, multiple, optional}, text?: true|{placeholder}, fields?, live?, action?, note?, folder?, run(ctx) }
+ * (`folder: false` hides "Procesar una carpeta" for tools whose result is not a file),
  * or a custom one with `render(root)`. Returns a cleanup function.
  */
 export function renderTool(tool, root) {
@@ -365,6 +366,7 @@ export function renderTool(tool, root) {
   const folderButton =
     button &&
     zone &&
+    tool.folder !== false &&
     // The Android WebView has the function but no folder picker to show.
     !ANDROID &&
     'showDirectoryPicker' in window &&

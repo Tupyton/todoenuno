@@ -1,5 +1,6 @@
 import download from './download.js';
 import image from './image.js';
+import photoMetadata from './photo-metadata.js';
 import pdf from './pdf.js';
 import media from './media.js';
 import text from './text.js';
@@ -24,4 +25,4 @@ export const categories = [
   { id: 'utilidades', name: 'Utilidades' },
 ];
 
-export const tools = [...download, ...image, ...imageEditors, ...pdf, ...pdfEditors, ...office, ...scanner, ...media, ...mediaCompose, ...text, ...speech, ...utilities, ...fonts, ...extras];
+export const tools = [...download, ...image, ...photoMetadata, ...imageEditors, ...pdf, ...pdfEditors, ...office, ...scanner, ...media, ...mediaCompose, ...text, ...speech, ...utilities, ...fonts, ...extras];

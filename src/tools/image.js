@@ -395,14 +395,6 @@ export default [
     run: ({ files, v }) => joined(files, v),
   }),
   image({
-    id: 'imagen-metadatos',
-    name: 'Quitar metadatos (EXIF)',
-    desc: 'Elimina ubicación, cámara y fecha de tus fotos.',
-    action: 'Limpiar',
-    note: 'La imagen se vuelve a codificar; los JPG pierden una mínima calidad.',
-    run: ({ files, progress }) => each(files, { format: 'same', quality: 95 }, progress, 'limpia', (img) => drawn(img)),
-  }),
-  image({
     id: 'imagen-favicons',
     name: 'Generar favicons',
     desc: 'Crea los iconos PNG de un sitio web desde una imagen.',

@@ -962,3 +962,36 @@ footer.site a:hover strong {
   border-bottom: 1px solid var(--border);
   font-size: 0.9rem;
 }
+
+.meta-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.meta-view h3 {
+  margin: 8px 0 0;
+  font-size: 1rem;
+}
+
+.meta-all {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.meta-all input[type='search'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.meta-all summary {
+  cursor: pointer;
+  padding: 6px 0;
+  font-weight: 500;
+}
+
+.meta-view .sheet td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

@@ -22,6 +22,7 @@
     "@capacitor/share": "^8.0.3",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@neslinesli93/qpdf-wasm": "^0.3.1",
+    "@uswriting/exiftool": "1.0.9",
     "docx-preview": "^0.4.1",
     "heic2any": "^0.0.4",
     "jsqr": "^1.4.0",
