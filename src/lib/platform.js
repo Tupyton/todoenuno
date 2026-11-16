@@ -7,7 +7,7 @@ export const SAVED_FOLDER = 'Documents/TodoEnUno';
 
 const CHUNK = 3 * 1024 * 1024; // bytes per write: a whole video as one base64 string would not fit in memory
 
-function base64(blob) {
+export function base64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result).split(',')[1] || '');

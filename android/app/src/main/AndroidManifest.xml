@@ -40,7 +40,20 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- Sticker packs made in the app, read only by WhatsApp (StickerProvider). -->
+        <provider
+            android:name=".StickerProvider"
+            android:authorities="${applicationId}.stickers"
+            android:enabled="true"
+            android:exported="true"
+            android:readPermission="com.whatsapp.sticker.READ" />
     </application>
+
+    <queries>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+    </queries>
 
     <!-- Permissions -->
 

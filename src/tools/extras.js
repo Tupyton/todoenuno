@@ -1,7 +1,9 @@
 import { ANDROID, DESKTOP } from '../env.js';
 import { componentJob, ensureComponents, renamed } from '../lib/components.js';
 import { drawn, encode, loadImage, makeCanvas } from '../lib/image.js';
-import { base } from '../ui.js';
+import { base64 } from '../lib/platform.js';
+import { fieldEl } from '../tool-page.js';
+import { base, h } from '../ui.js';
 
 /*
  * Tools of the desktop app that need an optional component, downloaded the first time they are used
@@ -112,6 +114,128 @@ async function removeBackground({ file, progress }) {
   return { blob: await encode(result, 'image/png'), name: renamed(file, 'sin-fondo', 'png') };
 }
 
+/*
+ * WhatsApp stickers: a WebP of exactly 512×512 up to 100 KB, transparent around the picture. The
+ * Android app can also add them to WhatsApp as a pack, which WhatsApp only takes with 3 to 30
+ * stickers (android/…/StickersPlugin.java).
+ */
+const STICKER = 512;
+const STICKER_MAX = 100 * 1024;
+const TRAY = 96;
+
+/** The picture fitted inside the square, with an optional white outline and a caption at the bottom. */
+function stickerCanvas(img, { border, text }) {
+  const canvas = makeCanvas(STICKER, STICKER);
+  const ctx = canvas.getContext('2d');
+  const outline = border ? 10 : 0;
+  const room = STICKER - 2 * (16 + outline); // WhatsApp asks for a 16 px margin
+  const scale = Math.min(room / img.naturalWidth, room / img.naturalHeight);
+  const [width, height] = [img.naturalWidth * scale, img.naturalHeight * scale];
+  const [x, y] = [(STICKER - width) / 2, (STICKER - height) / 2];
+  if (outline) {
+    // The outline is the picture's shape in white, stamped around it in a circle.
+    const shape = makeCanvas(STICKER, STICKER);
+    const shapeCtx = shape.getContext('2d');
+    shapeCtx.drawImage(img, x, y, width, height);
+    shapeCtx.globalCompositeOperation = 'source-in';
+    shapeCtx.fillStyle = '#fff';
+    shapeCtx.fillRect(0, 0, STICKER, STICKER);
+    for (let a = 0; a < 24; a++) {
+      const angle = (a / 24) * 2 * Math.PI;
+      ctx.drawImage(shape, Math.cos(angle) * outline, Math.sin(angle) * outline);
+    }
+  }
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, x, y, width, height);
+  const caption = text.trim();
+  if (caption) {
+    let size = 72;
+    const font = () => `800 ${size}px system-ui, sans-serif`;
+    ctx.font = font();
+    while (size > 12 && ctx.measureText(caption).width > STICKER - 32) {
+      size -= 2;
+      ctx.font = font();
+    }
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = size / 5;
+    ctx.strokeStyle = '#000';
+    ctx.fillStyle = '#fff';
+    ctx.strokeText(caption, STICKER / 2, STICKER - 16);
+    ctx.fillText(caption, STICKER / 2, STICKER - 16);
+  }
+  return canvas;
+}
+
+/** WebP at the highest quality that stays under WhatsApp's limit. */
+async function encodeSticker(canvas) {
+  for (const quality of [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]) {
+    const blob = await encode(canvas, 'image/webp', quality);
+    // Browsers that cannot write WebP hand back a PNG instead of failing.
+    if (blob.type !== 'image/webp') throw new Error('Este navegador no puede crear imágenes WebP. Prueba con Chrome, Edge o Firefox.');
+    if (blob.size <= STICKER_MAX) return blob;
+  }
+  throw new Error('La imagen tiene demasiado detalle para caber en los 100 KB de un sticker.');
+}
+
+/** Android: name and emoji of the pack, and the button that hands it to WhatsApp. */
+function whatsappPanel(stickers) {
+  const note = h('p', { class: 'status', role: 'status' });
+  if (stickers.length < 3 || stickers.length > 30) {
+    note.textContent = 'Para añadirlos a WhatsApp como paquete elige entre 3 y 30 imágenes: WhatsApp no acepta otros tamaños de paquete.';
+    return h('div', { class: 'result' }, note);
+  }
+  const values = {};
+  const fields = [
+    fieldEl({ key: 'name', label: 'Nombre del paquete', value: 'Mis stickers', maxlength: 128 }, values, () => {}),
+    fieldEl({ key: 'emoji', label: 'Emoji de los stickers', value: '😀', maxlength: 8, hint: 'WhatsApp lo usa para sugerirlos al escribir.' }, values, () => {}),
+  ];
+  const button = h(
+    'button',
+    {
+      type: 'button',
+      class: 'btn primary',
+      async onclick() {
+        button.disabled = true;
+        note.classList.remove('error');
+        note.textContent = 'Preparando el paquete…';
+        try {
+          const first = await loadImage(new File([stickers[0].blob], stickers[0].name));
+          const tray = await encode(drawn(first, TRAY, TRAY), 'image/png');
+          const { registerPlugin } = await import('@capacitor/core');
+          const { added } = await registerPlugin('Stickers').addToWhatsApp({
+            name: values.name,
+            emoji: values.emoji,
+            tray: await base64(tray),
+            stickers: await Promise.all(stickers.map((s) => base64(s.blob))),
+          });
+          note.textContent = added ? 'Paquete añadido a WhatsApp.' : 'No se añadió el paquete.';
+        } catch (error) {
+          note.textContent = error.message || String(error);
+          note.classList.add('error');
+        } finally {
+          button.disabled = false;
+        }
+      },
+    },
+    'Añadir a WhatsApp',
+  );
+  return h('div', { class: 'result' }, h('div', { class: 'fields' }, fields), h('div', { class: 'result-row' }, button), note);
+}
+
+async function makeStickers({ files, v, progress }) {
+  const stickers = [];
+  for (const [i, file] of files.entries()) {
+    const step = (p) => progress((i + (Number.isFinite(p) ? p : 0)) / files.length);
+    const source = v.background ? new File([(await removeBackground({ file, progress: step })).blob], file.name) : file;
+    const img = await loadImage(source);
+    stickers.push({ blob: await encodeSticker(stickerCanvas(img, v)), name: renamed(file, 'sticker', 'webp') });
+    step(1);
+  }
+  return ANDROID ? [whatsappPanel(stickers), ...stickers] : stickers;
+}
+
 export default [
   desktopTool({
     id: 'audio-transcribir',
@@ -208,5 +332,23 @@ export default [
       : 'Funciona sin conexión. La primera vez descarga 48 MB. El resultado es un PNG transparente.',
     action: 'Quitar fondo',
     run: removeBackground,
+  },
+  {
+    id: 'imagen-sticker',
+    name: 'Sticker de WhatsApp',
+    desc: ANDROID ? 'Convierte fotos en stickers y añádelos a WhatsApp.' : 'Convierte una foto en un sticker para WhatsApp.',
+    cat: 'imagen',
+    files: { accept: 'image/*', multiple: true },
+    fields: [
+      { key: 'background', label: 'Quitar fondo', type: 'checkbox', value: true },
+      { key: 'border', label: 'Borde blanco', type: 'checkbox', value: true },
+      { key: 'text', label: 'Texto (opcional)', placeholder: 'Escribe algo…', maxlength: 40 },
+    ],
+    note: ANDROID
+      ? 'Quitar el fondo descarga 44 MB la primera vez. Para añadirlos a WhatsApp elige entre 3 y 30 fotos; WhatsApp no acepta paquetes más pequeños.'
+      : 'Quitar el fondo descarga 48 MB la primera vez. La app de Android de TodoEnUno también los añade a WhatsApp como paquete.',
+    action: 'Crear stickers',
+    folder: false,
+    run: makeStickers,
   },
 ];

@@ -12,6 +12,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SpeechPlugin.class);
         registerPlugin(ComponentsPlugin.class);
         registerPlugin(ShareTargetPlugin.class);
+        registerPlugin(StickersPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
